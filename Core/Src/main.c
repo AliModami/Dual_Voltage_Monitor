@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 
 #include "buzzer.h"
+#include "buttons.h"
 
 
 /* USER CODE END Includes */
@@ -57,6 +58,8 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
+
+
 
 /* USER CODE END PFP */
 
@@ -100,6 +103,7 @@ int main(void)
 
 
   Buzzer_Init();
+  Buttons_Init();
 
 
   /* USER CODE END 2 */
@@ -111,7 +115,7 @@ int main(void)
 
 
 	  Buzzer_Task();
-
+	  Buttons_Task();
 
 
 
