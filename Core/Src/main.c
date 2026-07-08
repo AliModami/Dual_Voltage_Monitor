@@ -22,6 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include "buzzer.h"
+
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -95,12 +98,23 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
+
+  Buzzer_Init();
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
+
+	  Buzzer_Task();
+
+
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
