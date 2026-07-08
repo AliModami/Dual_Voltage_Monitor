@@ -24,6 +24,7 @@
 
 #include "buzzer.h"
 #include "buttons.h"
+#include "button_app.h"
 
 
 /* USER CODE END Includes */
@@ -104,7 +105,7 @@ int main(void)
 
   Buzzer_Init();
   Buttons_Init();
-
+  ButtonApp_Init();
 
   /* USER CODE END 2 */
 
@@ -116,6 +117,7 @@ int main(void)
 
 	  Buzzer_Task();
 	  Buttons_Task();
+	  ButtonApp_Task();
 
 
 
