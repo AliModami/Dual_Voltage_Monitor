@@ -26,6 +26,7 @@
 #include "buttons.h"
 #include "button_app.h"
 #include "menu.h"
+#include "lcd_i2c.h"
 
 
 /* USER CODE END Includes */
@@ -52,6 +53,11 @@ I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
 
+//------------------------------------------------
+//for debug watch dog
+static Menu_Mode_t debug_menu_mode;
+//------------------------------------------------
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,7 +66,6 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
-
 
 
 /* USER CODE END PFP */
@@ -108,6 +113,18 @@ int main(void)
   Buttons_Init();
   ButtonApp_Init();
   Menu_Init();
+  LCD_Init();
+  HAL_Delay(500);
+
+  LCD_Clear();
+
+  LCD_SetCursor(0, 0);
+
+  LCD_Print("Dual Voltage");
+
+  LCD_SetCursor(1, 0);
+
+  LCD_Print("Monitor");
 
 
   /* USER CODE END 2 */
@@ -135,6 +152,7 @@ int main(void)
 
 
 	  Menu_Task();
+	  debug_menu_mode = Menu_GetMode();
 
 
 
