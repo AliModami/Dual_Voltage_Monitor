@@ -27,13 +27,16 @@
  *      2026-07-08
  ******************************************************************************/
 
+
 #ifndef APP_TYPES_H
 #define APP_TYPES_H
+
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
 
 /******************************************************************************
  *                              Include Files
@@ -42,20 +45,30 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+
 /******************************************************************************
- *                          Boolean Compatibility
+ *                          Boolean Type Information
  ******************************************************************************/
 
 /*
- * Modern embedded projects should use the C99 bool type.
+ * Modern embedded C projects should use the standard C99 boolean type.
+ *
+ * The <stdbool.h> header provides:
+ *
+ *      bool
+ *      true
+ *      false
  *
  * Example:
  *
- * bool alarm_enabled;
- * bool lcd_ready;
+ *      bool alarm_enabled;
+ *      bool lcd_ready;
+ *
+ * We intentionally do not create another boolean type here.
+ * Using the standard type keeps the project compatible with other
+ * C libraries and prevents unnecessary duplicate definitions.
  */
 
-typedef bool bool_t;
 
 /******************************************************************************
  *                          Voltage Type
@@ -71,9 +84,16 @@ typedef bool bool_t;
  *      231.2 V
  *
  * are all valid values in this project.
+ *
+ * Using a meaningful type name improves code readability.
+ *
+ * Example:
+ *
+ *      voltage_t input_voltage;
  */
 
 typedef float voltage_t;
+
 
 /******************************************************************************
  *                          Time Type
@@ -92,6 +112,7 @@ typedef float voltage_t;
 
 typedef uint32_t time_ms_t;
 
+
 /******************************************************************************
  *                          ADC Raw Type
  ******************************************************************************/
@@ -102,9 +123,13 @@ typedef uint32_t time_ms_t;
  * STM32F103 ADC:
  *
  *      0 ... 4095
+ *
+ * This type represents the direct value returned by ADC hardware before
+ * conversion into engineering units.
  */
 
 typedef uint16_t adc_raw_t;
+
 
 /******************************************************************************
  *                          Millivolt Type
@@ -113,9 +138,16 @@ typedef uint16_t adc_raw_t;
 /*
  * Internal calculations often use millivolts
  * instead of floating-point values.
+ *
+ * Example:
+ *
+ *      230000 mV = 230 V
+ *
+ * This type is useful when integer calculations are preferred.
  */
 
 typedef uint32_t millivolt_t;
+
 
 /******************************************************************************
  *                          Percentage Type
@@ -131,15 +163,23 @@ typedef uint32_t millivolt_t;
 
 typedef uint8_t percent_t;
 
+
 /******************************************************************************
  *                          Counter Type
  ******************************************************************************/
 
 /*
  * Generic software counter.
+ *
+ * Used for:
+ *
+ *  - Sample counters
+ *  - Event counters
+ *  - Statistics
  */
 
 typedef uint32_t counter_t;
+
 
 /******************************************************************************
  *                          Index Type
@@ -147,26 +187,22 @@ typedef uint32_t counter_t;
 
 /*
  * Used for indexing arrays and tables.
+ *
+ * Keeping a separate type improves readability when an integer value
+ * represents a position rather than a measurement.
  */
 
 typedef uint16_t index_t;
 
-/******************************************************************************
- *                          Size Type
- ******************************************************************************/
-
-/*
- * Used when expressing the number of elements.
- */
-
-//typedef uint16_t size_t16;
 
 /******************************************************************************
  *                              End of File
  ******************************************************************************/
 
+
 #ifdef __cplusplus
 }
 #endif
+
 
 #endif /* APP_TYPES_H */
