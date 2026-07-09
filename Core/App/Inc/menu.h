@@ -42,6 +42,7 @@
 
 #ifndef MENU_H
 #define MENU_H
+#define MENU_HEADER_VERSION_110
 
 
 #ifdef __cplusplus
@@ -151,6 +152,39 @@ void Menu_ProcessCommand(Button_AppCommand_t command);
  *      Current mode.
  */
 Menu_Mode_t Menu_GetMode(void);
+
+
+
+/******************************************************************************
+ * @brief
+ *      Return currently selected menu item.
+ *
+ * @details
+ *      This function is read-only.
+ *
+ *      It allows renderer modules to know which menu
+ *      item is currently selected without modifying
+ *      the internal menu state.
+ *
+ * @return
+ *      Pointer to current menu item.
+ ******************************************************************************/
+const MenuItem_t *Menu_GetCurrentItem(void);
+
+
+
+/******************************************************************************
+ * @brief
+ *      Return root menu item.
+ *
+ * @details
+ *      Renderer modules use this function to obtain
+ *      the title of the current menu tree.
+ *
+ * @return
+ *      Pointer to root menu item.
+ ******************************************************************************/
+const MenuItem_t *Menu_GetRootItem(void);
 
 
 
