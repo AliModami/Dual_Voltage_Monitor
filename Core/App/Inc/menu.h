@@ -28,10 +28,16 @@
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.0.0
+ *      1.1.0
  *
  * Created :
  *      2026-07-08
+ *
+ * Change History :
+ *
+ *      1.1.0
+ *          Added read-only interface for renderer layer.
+ *
  ******************************************************************************/
 
 #ifndef MENU_H
@@ -60,13 +66,6 @@ extern "C"
  *                              Menu Modes
  ******************************************************************************/
 
-/**
- * @brief
- *      Current application display mode.
- *
- *      Each mode represents a different application screen.
- */
-
 typedef enum
 {
     MENU_MODE = 0,
@@ -79,7 +78,6 @@ typedef enum
 
     SYSTEM_INFO_MODE
 
-
 } Menu_Mode_t;
 
 
@@ -87,13 +85,6 @@ typedef enum
 /******************************************************************************
  *                              Menu Actions
  ******************************************************************************/
-
-/**
- * @brief
- *      Function type for menu item actions.
- *
- *      Each menu item can optionally execute an action.
- */
 
 typedef void (*MenuAction_t)(void);
 
@@ -103,37 +94,11 @@ typedef void (*MenuAction_t)(void);
  *                              Menu Item
  ******************************************************************************/
 
-/**
- * @brief
- *      Menu item structure.
- *
- *      The menu is designed as a tree.
- *
- *      Example:
- *
- *              Main Menu
- *                  |
- *          ----------------
- *          |              |
- *       Monitor       Settings
- *
- */
-
 typedef struct MenuItem
 {
     const char *name;
 
-
-    /*
-     * Function executed when item is selected.
-     */
-
     MenuAction_t action;
-
-
-    /*
-     * Tree navigation pointers.
-     */
 
     struct MenuItem *parent;
 
@@ -142,7 +107,6 @@ typedef struct MenuItem
     struct MenuItem *next;
 
     struct MenuItem *prev;
-
 
 } MenuItem_t;
 
@@ -162,11 +126,7 @@ void Menu_Init(void);
 
 /**
  * @brief
- *      Execute menu processing task.
- *
- * @details
- *      This function must be called periodically
- *      from the main loop.
+ *      Execute periodic menu task.
  */
 void Menu_Task(void);
 
@@ -185,12 +145,47 @@ void Menu_ProcessCommand(Button_AppCommand_t command);
 
 /**
  * @brief
- *      Get current menu mode.
+ *      Return current application mode.
  *
  * @return
- *      Current menu mode.
+ *      Current mode.
  */
 Menu_Mode_t Menu_GetMode(void);
+
+
+
+/******************************************************************************
+ *                      Read Only Renderer Interface
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Return currently selected menu item.
+ *
+ * @details
+ *      This function provides read-only access for
+ *      modules such as Menu Renderer.
+ *
+ *      Ownership remains inside menu.c.
+ *
+ * @return
+ *      Pointer to current menu item.
+ */
+const MenuItem_t *Menu_GetCurrentItem(void);
+
+
+
+/**
+ * @brief
+ *      Return root menu item.
+ *
+ * @details
+ *      Used by renderer or future diagnostics.
+ *
+ * @return
+ *      Pointer to root menu.
+ */
+const MenuItem_t *Menu_GetRootItem(void);
 
 
 

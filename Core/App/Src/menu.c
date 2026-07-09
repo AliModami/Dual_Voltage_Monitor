@@ -66,11 +66,15 @@
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.0.0
+ *      1.1.0
  *
- * Created :
- *      2026-07-08
+ * Change History :
+ *
+ *      1.1.0
+ *          Added read-only API for renderer layer.
+ *
  ******************************************************************************/
+
 
 
 
@@ -81,6 +85,7 @@
 #include "menu.h"
 
 #include <stddef.h>
+
 
 
 
@@ -106,6 +111,7 @@ static Menu_Mode_t current_mode = MENU_MODE;
  */
 
 static MenuItem_t *current_item = NULL;
+
 
 
 
@@ -175,6 +181,9 @@ static void Menu_ActionSettings(void);
  */
 static void Menu_ActionSystemInfo(void);
 
+
+
+
 /******************************************************************************
  *                         Menu Tree Definition
  ******************************************************************************/
@@ -196,6 +205,7 @@ static MenuItem_t menu_stream;
 static MenuItem_t menu_settings;
 
 static MenuItem_t menu_system_info;
+
 
 
 
@@ -224,7 +234,6 @@ static MenuItem_t menu_root =
 
     .prev   = NULL
 };
-
 
 
 /*
@@ -411,6 +420,46 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
     }
 }
 
+
+
+/******************************************************************************
+ *                  Read Only Renderer Interface
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Return current selected menu item.
+ *
+ * @details
+ *      Renderer modules use this function to obtain
+ *      the currently selected menu item without
+ *      accessing private variables.
+ *
+ * @return
+ *      Pointer to current menu item.
+ */
+const MenuItem_t *Menu_GetCurrentItem(void)
+{
+    return current_item;
+}
+
+
+
+/**
+ * @brief
+ *      Return root menu item.
+ *
+ * @details
+ *      This function provides read-only access
+ *      to the root of the menu tree.
+ *
+ * @return
+ *      Pointer to root menu item.
+ */
+const MenuItem_t *Menu_GetRootItem(void)
+{
+    return &menu_root;
+}
 
 /******************************************************************************
  *                         Private Functions
