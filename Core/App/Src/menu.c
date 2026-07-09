@@ -6,75 +6,51 @@
  *      Dual Voltage Monitor
  *
  * Description :
+ *
  *      This file implements the application menu framework.
  *
- *      The menu module is responsible for:
+ *      Responsibilities:
  *
- *          - Managing menu tree structure
- *          - Tracking current selected item
- *          - Processing application button commands
- *          - Changing application modes
+ *          - Manage menu tree
+ *          - Track selected item
+ *          - Process navigation commands
+ *          - Execute menu actions
+ *          - Provide read-only information for renderer
  *
- *      Hardware dependency:
+ *      This module does NOT access:
  *
- *          NONE
- *
- *      Input source:
- *
- *          button_app.c
- *
- *      Data flow:
- *
- *
- *          GPIO Buttons
- *                |
- *                v
- *          buttons.c
- *                |
- *                v
- *          button_app.c
- *                |
- *                v
- *          menu.c
- *                |
- *                v
- *          Application Screens
- *
- *
- *      The menu module does not access:
- *
+ *          - LCD
  *          - GPIO
- *          - LCD hardware
- *          - UART
  *          - ADC
- *
- *      This separation keeps the framework reusable.
- *
- *-----------------------------------------------------------------------------
- * Design Rules:
- *
- *      1. Menu receives commands, not hardware events.
- *
- *      2. Navigation logic remains inside this module.
- *
- *      3. Display code is separated from menu logic.
- *
- *      4. Menu items are represented using a tree structure.
+ *          - UART
  *
  *-----------------------------------------------------------------------------
+ *
+ * Architecture:
+ *
+ *          Buttons
+ *             |
+ *             v
+ *       button_app.c
+ *             |
+ *             v
+ *          menu.c
+ *             |
+ *             v
+ *    menu_renderer.c
+ *             |
+ *             v
+ *       lcd_i2c.c
+ *
+ *-----------------------------------------------------------------------------
+ *
  * Author :
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.1.0
- *
- * Change History :
- *
- *      1.1.0
- *          Added read-only API for renderer layer.
+ *      1.2.0
  *
  ******************************************************************************/
-
 
 
 
@@ -94,9 +70,7 @@
  ******************************************************************************/
 
 /*
- * Current operating mode of the application.
- *
- * At startup the system enters the main menu.
+ * Current application mode.
  */
 
 static Menu_Mode_t current_mode = MENU_MODE;
@@ -104,13 +78,20 @@ static Menu_Mode_t current_mode = MENU_MODE;
 
 
 /*
- * Pointer to currently selected menu item.
- *
- * This pointer moves through the menu tree
- * when UP and DOWN commands are received.
+ * Currently selected menu item.
  */
 
 static MenuItem_t *current_item = NULL;
+
+
+
+/*
+ * Current menu title.
+ *
+ * Used by renderer as fixed LCD header.
+ */
+
+static const char *current_title = "Main Menu";
 
 
 
@@ -119,81 +100,55 @@ static MenuItem_t *current_item = NULL;
  *                         Private Function Prototypes
  ******************************************************************************/
 
-/**
- * @brief
- *      Move selection to next item.
+/*
+ * Move selection downward.
  */
 static void Menu_MoveNext(void);
 
 
 
-/**
- * @brief
- *      Move selection to previous item.
+/*
+ * Move selection upward.
  */
 static void Menu_MovePrevious(void);
 
 
 
-/**
- * @brief
- *      Execute selected item.
+/*
+ * Execute selected item.
  */
 static void Menu_EnterItem(void);
 
 
 
-/**
- * @brief
- *      Return to parent item.
+/*
+ * Return to parent menu.
  */
 static void Menu_Back(void);
 
 
 
-/**
- * @brief
- *      Action executed for Monitor item.
+/*
+ * Menu actions.
  */
+
 static void Menu_ActionMonitor(void);
 
-
-
-/**
- * @brief
- *      Action executed for Stream item.
- */
 static void Menu_ActionStream(void);
 
-
-
-/**
- * @brief
- *      Action executed for Settings item.
- */
 static void Menu_ActionSettings(void);
 
-
-
-/**
- * @brief
- *      Action executed for System Info item.
- */
 static void Menu_ActionSystemInfo(void);
 
 
 
 
 /******************************************************************************
- *                         Menu Tree Definition
+ *                         Menu Tree Declaration
  ******************************************************************************/
 
 /*
- * Forward declarations of menu items.
- *
- * Each item contains pointers to other items.
- * Therefore, declarations are required before
- * the actual initialization.
+ * Forward declarations.
  */
 
 static MenuItem_t menu_root;
@@ -210,14 +165,11 @@ static MenuItem_t menu_system_info;
 
 
 /******************************************************************************
- *                         Menu Item Initialization
+ *                         Menu Tree Definition
  ******************************************************************************/
 
 /*
- * Root menu item.
- *
- * This item represents the top level
- * of the menu tree.
+ * Root item.
  */
 
 static MenuItem_t menu_root =
@@ -236,8 +188,9 @@ static MenuItem_t menu_root =
 };
 
 
+
 /*
- * Live Monitor menu item.
+ * Live Monitor item.
  */
 
 static MenuItem_t menu_monitor =
@@ -250,15 +203,21 @@ static MenuItem_t menu_monitor =
 
     .child  = NULL,
 
+    /*
+     * Normal linked list.
+     *
+     * No wrap around.
+     */
+
     .next   = &menu_stream,
 
-    .prev   = &menu_system_info
+    .prev   = NULL
 };
 
 
 
 /*
- * UART Stream menu item.
+ * Stream item.
  */
 
 static MenuItem_t menu_stream =
@@ -279,7 +238,7 @@ static MenuItem_t menu_stream =
 
 
 /*
- * Settings menu item.
+ * Settings item.
  */
 
 static MenuItem_t menu_settings =
@@ -300,7 +259,7 @@ static MenuItem_t menu_settings =
 
 
 /*
- * System information menu item.
+ * System information item.
  */
 
 static MenuItem_t menu_system_info =
@@ -313,7 +272,13 @@ static MenuItem_t menu_system_info =
 
     .child  = NULL,
 
-    .next   = &menu_monitor,
+    /*
+     * Last item.
+     *
+     * DOWN stops here.
+     */
+
+    .next   = NULL,
 
     .prev   = &menu_settings
 };
@@ -327,19 +292,13 @@ static MenuItem_t menu_system_info =
 /**
  * @brief
  *      Initialize menu framework.
- *
- * @details
- *
- *      At startup:
- *
- *          - Select main menu
- *          - Select first available item
- *          - Reset current mode
- *
  */
 void Menu_Init(void)
 {
     current_mode = MENU_MODE;
+
+
+    current_title = "Main Menu";
 
 
     /*
@@ -353,16 +312,7 @@ void Menu_Init(void)
 
 /**
  * @brief
- *      Execute periodic menu task.
- *
- * @details
- *
- *      Reserved for future operations:
- *
- *          - LCD refresh
- *          - Menu timeout
- *          - Screen management
- *
+ *      Periodic menu task.
  */
 void Menu_Task(void)
 {
@@ -373,10 +323,7 @@ void Menu_Task(void)
 
 /**
  * @brief
- *      Process application button command.
- *
- * @param command
- *      Command generated by Button Application layer.
+ *      Process button command.
  */
 void Menu_ProcessCommand(Button_AppCommand_t command)
 {
@@ -420,8 +367,6 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
     }
 }
 
-
-
 /******************************************************************************
  *                  Read Only Renderer Interface
  ******************************************************************************/
@@ -431,12 +376,13 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
  *      Return current selected menu item.
  *
  * @details
- *      Renderer modules use this function to obtain
- *      the currently selected menu item without
- *      accessing private variables.
+ *      Renderer uses this function to know
+ *      which item is selected.
+ *
+ *      No modification is allowed.
  *
  * @return
- *      Pointer to current menu item.
+ *      Pointer to current item.
  */
 const MenuItem_t *Menu_GetCurrentItem(void)
 {
@@ -449,17 +395,83 @@ const MenuItem_t *Menu_GetCurrentItem(void)
  * @brief
  *      Return root menu item.
  *
- * @details
- *      This function provides read-only access
- *      to the root of the menu tree.
- *
  * @return
- *      Pointer to root menu item.
+ *      Pointer to root item.
  */
 const MenuItem_t *Menu_GetRootItem(void)
 {
     return &menu_root;
 }
+
+
+
+/**
+ * @brief
+ *      Return current menu title.
+ *
+ * @details
+ *      Renderer displays this text
+ *      on the fixed title row.
+ *
+ * @return
+ *      Pointer to title string.
+ */
+const char *Menu_GetCurrentMenuTitle(void)
+{
+    return current_title;
+}
+
+
+
+/**
+ * @brief
+ *      Calculate LCD row of selected item.
+ *
+ * @details
+ *      This function is used by the
+ *      incremental renderer.
+ *
+ *      The current LCD design shows:
+ *
+ *          Row 0 : Title
+ *
+ *          Row 1 : Item above
+ *
+ *          Row 2 : Selected item
+ *
+ *          Row 3 : Item below
+ *
+ *
+ *      Therefore the selected item
+ *      is always rendered on row 2.
+ *
+ * @param item
+ *      Menu item pointer.
+ *
+ * @return
+ *      LCD row number.
+ */
+uint8_t Menu_GetItemRow(const MenuItem_t *item)
+{
+    if(item == NULL)
+    {
+        return 0U;
+    }
+
+
+
+    if(item == current_item)
+    {
+        return 2U;
+    }
+
+
+
+    return 0U;
+}
+
+
+
 
 /******************************************************************************
  *                         Private Functions
@@ -468,12 +480,14 @@ const MenuItem_t *Menu_GetRootItem(void)
 
 /**
  * @brief
- *      Move selection to next menu item.
+ *      Move selection downward.
  *
  * @details
- *      The menu uses linked navigation.
  *
- *      The next pointer defines the forward direction.
+ *      Navigation stops at the last item.
+ *
+ *      No circular movement exists.
+ *
  */
 static void Menu_MoveNext(void)
 {
@@ -483,6 +497,10 @@ static void Menu_MoveNext(void)
     }
 
 
+
+    /*
+     * Move only when next item exists.
+     */
 
     if(current_item->next != NULL)
     {
@@ -494,10 +512,14 @@ static void Menu_MoveNext(void)
 
 /**
  * @brief
- *      Move selection to previous menu item.
+ *      Move selection upward.
  *
  * @details
- *      The previous pointer defines the reverse direction.
+ *
+ *      Navigation stops at first item.
+ *
+ *      No circular movement exists.
+ *
  */
 static void Menu_MovePrevious(void)
 {
@@ -507,6 +529,10 @@ static void Menu_MovePrevious(void)
     }
 
 
+
+    /*
+     * Move only when previous item exists.
+     */
 
     if(current_item->prev != NULL)
     {
@@ -518,7 +544,7 @@ static void Menu_MovePrevious(void)
 
 /**
  * @brief
- *      Execute selected menu item action.
+ *      Execute selected item.
  */
 static void Menu_EnterItem(void)
 {
@@ -539,7 +565,7 @@ static void Menu_EnterItem(void)
 
 /**
  * @brief
- *      Return to parent menu item.
+ *      Return to parent menu.
  */
 static void Menu_Back(void)
 {
@@ -553,13 +579,17 @@ static void Menu_Back(void)
     if(current_item->parent != NULL)
     {
         current_item = current_item->parent;
+
+        current_mode = MENU_MODE;
+
+        current_title = "Main Menu";
     }
 }
 
 
 
 /******************************************************************************
- *                         Menu Item Actions
+ *                         Menu Actions
  ******************************************************************************/
 
 
@@ -587,11 +617,20 @@ static void Menu_ActionStream(void)
 
 /**
  * @brief
- *      Enter Settings screen.
+ *      Enter Settings menu.
  */
 static void Menu_ActionSettings(void)
 {
     current_mode = SETTINGS_MODE;
+
+
+    /*
+     * Future submenu expansion:
+     *
+     * current_title = "Settings Menu";
+     *
+     * when child items are added.
+     */
 }
 
 
@@ -608,28 +647,136 @@ static void Menu_ActionSystemInfo(void)
 
 
 /******************************************************************************
- *                         Public Mode Interface
+ *                         Additional Notes
  ******************************************************************************/
 
-/**
- * @brief
- *      Return current application mode.
+/*
+ * Menu framework behavior:
  *
- * @return
- *      Current menu/application mode.
+ *
+ * 1) Navigation
+ * ----------------
+ *
+ * The menu uses a linear linked list.
+ *
+ * Example:
+ *
+ *      Live Monitor
+ *             |
+ *             v
+ *      Start Stream
+ *             |
+ *             v
+ *       Settings
+ *             |
+ *             v
+ *       System Info
+ *
+ *
+ * The first item has:
+ *
+ *      prev = NULL
+ *
+ * The last item has:
+ *
+ *      next = NULL
+ *
+ *
+ * Therefore:
+ *
+ *      UP at first item:
+ *
+ *          No action
+ *
+ *
+ *      DOWN at last item:
+ *
+ *          No action
+ *
+ *
+ * This creates a professional
+ * non-circular menu behavior.
+ *
  */
-Menu_Mode_t Menu_GetMode(void)
-{
-    return current_mode;
-}
+
+
+
+/*
+ * Renderer cooperation:
+ *
+ * menu.c owns:
+ *
+ *      - Selection state
+ *      - Navigation
+ *      - Actions
+ *
+ *
+ * menu_renderer.c owns:
+ *
+ *      - LCD drawing
+ *      - Cursor display
+ *      - Text positioning
+ *
+ *
+ * The renderer never changes
+ * the menu state.
+ *
+ */
+
+
+
+/*
+ * Future Settings submenu example:
+ *
+ *
+ * Settings
+ *
+ *       |
+ *       +---- High Voltage
+ *
+ *       |
+ *       +---- Low Voltage
+ *
+ *       |
+ *       +---- Switch Delay
+ *
+ *
+ * At that time:
+ *
+ * menu_settings.child
+ *
+ * will point to the first
+ * settings item.
+ *
+ */
+
+
 
 /******************************************************************************
- * @brief
- *      Return currently selected menu item.
- *
- * @return
- *      Pointer to current menu item.
+ *                         Version History
  ******************************************************************************/
+
+/*
+ *
+ * Version 1.2.0
+ *
+ * Changes:
+ *
+ *      - Removed circular navigation
+ *
+ *      - Added fixed menu boundaries
+ *
+ *      - Added renderer title interface
+ *
+ *      - Added item row interface
+ *
+ *      - Prepared framework for
+ *        incremental LCD rendering
+ *
+ *
+ */
+
+
 
 /******************************************************************************
  *                              End of File

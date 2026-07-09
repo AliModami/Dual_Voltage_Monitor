@@ -6,9 +6,15 @@
  *      Dual Voltage Monitor
  *
  * Description :
- *      This module defines the public interface of the menu framework.
  *
- *      The menu system is independent from hardware buttons.
+ *      This file defines the public interface of the menu framework.
+ *
+ *      The menu system is independent from:
+ *
+ *          - Hardware buttons
+ *          - LCD display
+ *          - Application peripherals
+ *
  *
  *      Input flow:
  *
@@ -20,29 +26,51 @@
  *                v
  *          Menu Framework
  *
- *      The menu receives application commands and changes the
- *      current menu state accordingly.
+ *
+ *      Display flow:
+ *
+ *          Menu Framework
+ *                |
+ *                v
+ *          Menu Renderer
+ *                |
+ *                v
+ *          LCD Driver
  *
  *-----------------------------------------------------------------------------
+ *
+ * Design Rules:
+ *
+ *      1. Menu owns navigation state.
+ *
+ *      2. Renderer only reads menu information.
+ *
+ *      3. Menu never accesses LCD hardware.
+ *
+ *      4. Hardware events are converted into commands
+ *         before reaching this module.
+ *
+ *-----------------------------------------------------------------------------
+ *
  * Author :
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.1.0
- *
- * Created :
- *      2026-07-08
+ *      1.2.0
  *
  * Change History :
  *
- *      1.1.0
- *          Added read-only interface for renderer layer.
+ *      1.2.0
+ *
+ *          Added read-only interface for incremental
+ *          LCD renderer.
  *
  ******************************************************************************/
 
+
 #ifndef MENU_H
 #define MENU_H
-#define MENU_HEADER_VERSION_110
+
 
 
 #ifdef __cplusplus
@@ -79,6 +107,7 @@ typedef enum
 
     SYSTEM_INFO_MODE
 
+
 } Menu_Mode_t;
 
 
@@ -87,34 +116,77 @@ typedef enum
  *                              Menu Actions
  ******************************************************************************/
 
+/*
+ * Function pointer used by menu items.
+ *
+ * When ENTER is pressed, the action
+ * belonging to the selected item executes.
+ */
+
 typedef void (*MenuAction_t)(void);
 
 
 
 /******************************************************************************
- *                              Menu Item
+ *                              Menu Item Structure
  ******************************************************************************/
 
 typedef struct MenuItem
 {
+    /*
+     * Text displayed on LCD.
+     */
+
     const char *name;
+
+
+
+    /*
+     * Function executed when ENTER
+     * is pressed.
+     */
 
     MenuAction_t action;
 
+
+
+    /*
+     * Parent menu item.
+     */
+
     struct MenuItem *parent;
+
+
+
+    /*
+     * First child item.
+     */
 
     struct MenuItem *child;
 
+
+
+    /*
+     * Next item in same menu level.
+     */
+
     struct MenuItem *next;
 
+
+
+    /*
+     * Previous item in same menu level.
+     */
+
     struct MenuItem *prev;
+
 
 } MenuItem_t;
 
 
 
 /******************************************************************************
- *                         Public Functions
+ *                              Public Functions
  ******************************************************************************/
 
 /**
@@ -135,7 +207,7 @@ void Menu_Task(void);
 
 /**
  * @brief
- *      Process application button command.
+ *      Process command received from button layer.
  *
  * @param command
  *      Button application command.
@@ -146,64 +218,32 @@ void Menu_ProcessCommand(Button_AppCommand_t command);
 
 /**
  * @brief
- *      Return current application mode.
+ *      Get current application mode.
  *
  * @return
- *      Current mode.
+ *      Current menu mode.
  */
 Menu_Mode_t Menu_GetMode(void);
 
 
 
 /******************************************************************************
- * @brief
- *      Return currently selected menu item.
- *
- * @details
- *      This function is read-only.
- *
- *      It allows renderer modules to know which menu
- *      item is currently selected without modifying
- *      the internal menu state.
- *
- * @return
- *      Pointer to current menu item.
- ******************************************************************************/
-const MenuItem_t *Menu_GetCurrentItem(void);
-
-
-
-/******************************************************************************
- * @brief
- *      Return root menu item.
- *
- * @details
- *      Renderer modules use this function to obtain
- *      the title of the current menu tree.
- *
- * @return
- *      Pointer to root menu item.
- ******************************************************************************/
-const MenuItem_t *Menu_GetRootItem(void);
-
-
-
-/******************************************************************************
- *                      Read Only Renderer Interface
+ *                      Renderer Read Only Interface
  ******************************************************************************/
 
 /**
  * @brief
- *      Return currently selected menu item.
+ *      Get currently selected menu item.
  *
  * @details
- *      This function provides read-only access for
- *      modules such as Menu Renderer.
+ *
+ *      This function provides read-only access
+ *      to renderer modules.
  *
  *      Ownership remains inside menu.c.
  *
  * @return
- *      Pointer to current menu item.
+ *      Pointer to selected item.
  */
 const MenuItem_t *Menu_GetCurrentItem(void);
 
@@ -211,21 +251,77 @@ const MenuItem_t *Menu_GetCurrentItem(void);
 
 /**
  * @brief
- *      Return root menu item.
+ *      Get root menu item.
  *
  * @details
- *      Used by renderer or future diagnostics.
+ *
+ *      Renderer uses this function to obtain
+ *      menu hierarchy information.
  *
  * @return
- *      Pointer to root menu.
+ *      Pointer to root item.
  */
 const MenuItem_t *Menu_GetRootItem(void);
+
+
+
+/**
+ * @brief
+ *      Get menu title.
+ *
+ * @details
+ *
+ *      The renderer uses this string as
+ *      fixed LCD title line.
+ *
+ *      Example:
+ *
+ *          Main Menu
+ *          Settings Menu
+ *
+ * @return
+ *      Pointer to title string.
+ */
+const char *Menu_GetCurrentMenuTitle(void);
+
+
+
+/**
+ * @brief
+ *      Get LCD row position of menu item.
+ *
+ * @details
+ *
+ *      Used by incremental renderer.
+ *
+ *      The renderer can update only the
+ *      cursor position instead of refreshing
+ *      the entire LCD.
+ *
+ *      Return value:
+ *
+ *          0 : Not visible / invalid
+ *
+ *          1 : LCD row 1
+ *
+ *          2 : LCD row 2
+ *
+ *          3 : LCD row 3
+ *
+ * @param item
+ *      Menu item pointer.
+ *
+ * @return
+ *      LCD row number.
+ */
+uint8_t Menu_GetItemRow(const MenuItem_t *item);
 
 
 
 #ifdef __cplusplus
 }
 #endif
+
 
 
 #endif /* MENU_H */

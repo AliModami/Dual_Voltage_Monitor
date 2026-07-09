@@ -1,105 +1,54 @@
 /******************************************************************************
  * @file    menu_renderer.c
- * @brief   LCD Menu Renderer Implementation
+ * @brief   Character LCD Menu Renderer Implementation
  *-----------------------------------------------------------------------------
  * Project :
  *      Dual Voltage Monitor
  *
  * Description :
  *
- *      This module is responsible ONLY for rendering the menu on the LCD.
+ *      This module is responsible only for displaying
+ *      the menu structure on a character LCD.
  *
- *      The renderer never modifies menu state.
+ *      Responsibilities:
  *
- *      Renderer responsibilities:
+ *          - Display menu title
+ *          - Display visible menu items
+ *          - Display selection cursor
+ *          - Manage three-line menu window
  *
- *          • Read menu information
- *          • Draw LCD title
- *          • Draw visible menu items
- *          • Draw current selection
- *          • Refresh LCD only when necessary
  *
- *      Renderer does NOT:
+ *      This module does NOT:
  *
- *          • Read GPIO
- *          • Process buttons
- *          • Navigate menus
- *          • Execute menu actions
- *          • Access ADC
- *          • Access UART
+ *          - Read buttons
+ *          - Change menu state
+ *          - Execute menu actions
+ *          - Access ADC
+ *          - Access UART
  *
- *-----------------------------------------------------------------------------
- *
- *                      Software Architecture
- *
- *          +----------------------+
- *          |    GPIO Buttons      |
- *          +----------+-----------+
- *                     |
- *                     v
- *          +----------------------+
- *          |     buttons.c        |
- *          +----------+-----------+
- *                     |
- *                     v
- *          +----------------------+
- *          |   button_app.c       |
- *          +----------+-----------+
- *                     |
- *                     v
- *          +----------------------+
- *          |      menu.c          |
- *          +----------+-----------+
- *                     |
- *                     | Read Only
- *                     v
- *          +----------------------+
- *          | menu_renderer.c      |
- *          +----------+-----------+
- *                     |
- *                     v
- *          +----------------------+
- *          |     lcd_i2c.c        |
- *          +----------------------+
  *
  *-----------------------------------------------------------------------------
  *
- * LCD Layout
+ * LCD Layout:
  *
- *      LCD 20x4
  *
- *      +----------------------+
- *      | Main Menu            |
- *      | > Live Monitor       |
- *      |   Start Stream       |
- *      |   Settings           |
- *      +----------------------+
+ *      +--------------------+
+ *      | Main Menu          |
+ *      | > Live Monitor     |
+ *      |   Start Stream     |
+ *      |   Settings         |
+ *      +--------------------+
  *
- *-----------------------------------------------------------------------------
  *
- * Design Rules
+ * Navigation behavior:
  *
- *      Rule 1
- *      -------
- *      Renderer never changes application state.
+ *      The first three items are displayed.
  *
- *      Rule 2
- *      -------
- *      Renderer always asks Menu module for information.
+ *      Cursor moves down until the last
+ *      visible row is reached.
  *
- *      Rule 3
- *      -------
- *      LCD driver remains completely independent.
+ *      After that, menu content scrolls.
  *
- *      Rule 4
- *      -------
- *      Renderer may be replaced in future by:
- *
- *          • TFT Renderer
- *          • OLED Renderer
- *          • UART Renderer
- *
- *      without changing menu.c.
  *
  *-----------------------------------------------------------------------------
  *
@@ -107,9 +56,11 @@
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.0.0
+ *      1.4.0
  *
  ******************************************************************************/
+
+
 
 /******************************************************************************
  *                              Include Files
@@ -120,26 +71,31 @@
 #include "lcd_i2c.h"
 
 #include <stdbool.h>
+
 #include <stdint.h>
-#include <string.h>
+
+#include <stddef.h>
+
 
 
 
 /******************************************************************************
- *                      Private Configuration
+ *                         Private Configuration
  ******************************************************************************/
 
 /*
  * LCD rows.
+ *
+ * Row 0 is reserved for menu title.
  */
 
-#define MENU_TITLE_ROW         0U
+#define LCD_TITLE_ROW              0U
 
-#define MENU_LINE1_ROW         1U
 
-#define MENU_LINE2_ROW         2U
+#define LCD_FIRST_MENU_ROW         1U
 
-#define MENU_LINE3_ROW         3U
+
+#define LCD_LAST_MENU_ROW          3U
 
 
 
@@ -147,84 +103,120 @@
  * LCD columns.
  */
 
-#define MENU_ARROW_COLUMN      0U
+#define LCD_CURSOR_COLUMN          0U
 
-#define MENU_TEXT_COLUMN       2U
+
+#define LCD_TEXT_COLUMN            2U
 
 
 
 /*
- * LCD width.
- *
- * Used when clearing lines.
+ * Character LCD width.
  */
 
-#define LCD_LINE_LENGTH        20U
+#define LCD_WIDTH                  20U
+
+
+
+/*
+ * Number of visible menu items.
+ *
+ * LCD 20x4:
+ *
+ *      One title row
+ *      Three menu rows
+ */
+
+#define MENU_VISIBLE_ITEMS         3U
+
 
 
 
 /******************************************************************************
- *                      Private Variables
+ *                         Private Variables
  ******************************************************************************/
 
 /*
- * Last rendered menu item.
+ * First menu item currently displayed
+ * in LCD window.
  *
- * Used to avoid unnecessary LCD refresh.
+ * Example:
+ *
+ *      display_start_item = Live Monitor
+ *
+ * LCD:
+ *
+ *      Live Monitor
+ *      Start Stream
+ *      Settings
+ *
  */
-
-static const MenuItem_t *last_item = NULL;
+static const MenuItem_t *display_start_item = NULL;
 
 
 
 /*
- * Last rendered application mode.
+ * Last selected item displayed.
+ *
+ * Used to detect cursor movement.
  */
 
-static Menu_Mode_t last_mode = MENU_MODE;
+static const MenuItem_t *last_selected_item = NULL;
+
+
+
+/*
+ * Indicates first LCD drawing.
+ */
+
+static bool first_render = true;
 
 
 
 /******************************************************************************
- *                  Private Function Prototypes
+ *                     Private Function Prototypes
  ******************************************************************************/
 
 /*
- * Draw currently active application screen.
+ * Draw complete menu screen.
  */
-
-static void MenuRenderer_DrawCurrentScreen(void);
+static void MenuRenderer_DrawFullMenu(void);
 
 
 
 /*
- * Draw menu page.
+ * Update only cursor position.
  */
-
-static void MenuRenderer_DrawMenu(void);
+static void MenuRenderer_UpdateCursor(
+                    const MenuItem_t *old_item,
+                    const MenuItem_t *new_item);
 
 
 
 /*
- * Draw title line.
+ * Update visible menu window.
  */
+static void MenuRenderer_UpdateWindow(void);
 
+
+
+/*
+ * Draw menu title.
+ */
 static void MenuRenderer_DrawTitle(void);
 
 
 
 /*
- * Draw visible menu entries.
+ * Draw visible menu items.
  */
-
 static void MenuRenderer_DrawItems(void);
 
 
 
 /*
- * Draw one menu entry.
+ * Draw one menu item line.
  */
-
 static void MenuRenderer_DrawItem(
                     uint8_t row,
                     const MenuItem_t *item,
@@ -233,233 +225,115 @@ static void MenuRenderer_DrawItem(
 
 
 /*
- * Clear one LCD line.
+ * Clear one LCD row.
  */
+static void MenuRenderer_ClearLine(
+                    uint8_t row);
 
-static void MenuRenderer_ClearLine(uint8_t row);
+
+
+/*
+ * Find if selected item is outside visible window.
+ */
+static bool MenuRenderer_NeedScroll(
+                    const MenuItem_t *selected);
 
 
 
 /******************************************************************************
- *                      Public Functions
+ *                         Public Functions
  ******************************************************************************/
 
 /**
  * @brief
- *      Initialize renderer.
- *
- * @details
- *      LCD hardware has already been initialized
- *      before this function is called.
+ *      Initialize menu renderer.
  */
 void MenuRenderer_Init(void)
 {
-    last_item = NULL;
+    display_start_item = NULL;
 
-    last_mode = MENU_MODE;
+
+    last_selected_item = NULL;
+
+
+    first_render = true;
 }
 
-/******************************************************************************
- *                      Public Functions
- ******************************************************************************/
+
 
 /**
  * @brief
- *      Periodic renderer task.
+ *      Periodic renderer update.
  *
  * @details
- *      This function should be called continuously
- *      from the application's main loop.
  *
- *      Renderer compares the current menu state with
- *      the last rendered state.
+ *      First call:
  *
- *      LCD is refreshed only when something changes.
+ *          Complete LCD drawing
  *
- *      Advantages:
  *
- *          • Less LCD flicker
- *          • Less I2C traffic
- *          • Better performance
+ *      Later:
+ *
+ *          Cursor movement only
+ *          or window scrolling
  *
  */
 void MenuRenderer_Update(void)
 {
     const MenuItem_t *current_item;
 
-    Menu_Mode_t current_mode;
 
-
-
-    /*
-     * Read current application state.
-     */
 
     current_item = Menu_GetCurrentItem();
 
-    current_mode = Menu_GetMode();
 
 
-
-    /*
-     * Has anything changed?
-     */
-
-    if ((current_item != last_item) ||
-        (current_mode != last_mode))
+    if(current_item == NULL)
     {
-        MenuRenderer_DrawCurrentScreen();
+        return;
+    }
 
-        last_item = current_item;
 
-        last_mode = current_mode;
+
+    if(first_render == true)
+    {
+        display_start_item = current_item;
+
+
+        MenuRenderer_DrawFullMenu();
+
+
+        last_selected_item = current_item;
+
+
+        first_render = false;
+
+
+        return;
+    }
+
+
+
+    if(current_item != last_selected_item)
+    {
+        if(MenuRenderer_NeedScroll(current_item))
+        {
+            MenuRenderer_UpdateWindow();
+        }
+        else
+        {
+            MenuRenderer_UpdateCursor(
+                    last_selected_item,
+                    current_item);
+        }
+
+
+
+        last_selected_item = current_item;
     }
 }
-
-
-
-/**
- * @brief
- *      Force complete LCD redraw.
- *
- * @details
- *      This function ignores the internal cache
- *      and redraws the complete active screen.
- *
- *      Future modules may call this after:
- *
- *          • Language change
- *          • LCD reinitialization
- *          • Display recovery
- *
- */
-void MenuRenderer_Refresh(void)
-{
-    MenuRenderer_DrawCurrentScreen();
-
-    last_item = Menu_GetCurrentItem();
-
-    last_mode = Menu_GetMode();
-}
-
-
-
 /******************************************************************************
- *                  Private Rendering Dispatcher
- ******************************************************************************/
-
-/**
- * @brief
- *      Draw currently active application screen.
- *
- * @details
- *      Renderer decides which screen must be drawn
- *      according to the current application mode.
- *
- *      IMPORTANT
- *      =========
- *
- *      menu.c decides WHICH mode is active.
- *
- *      menu_renderer.c decides HOW it is drawn.
- *
- *      This separation keeps both modules independent.
- *
- */
-static void MenuRenderer_DrawCurrentScreen(void)
-{
-    switch (Menu_GetMode())
-    {
-        case MENU_MODE:
-        {
-            MenuRenderer_DrawMenu();
-
-            break;
-        }
-
-
-
-        case MONITOR_MODE:
-        {
-            /*
-             * Future implementation.
-             */
-
-            LCD_Clear();
-
-            LCD_SetCursor(0,0);
-            LCD_Print("Live Monitor");
-
-            break;
-        }
-
-
-
-        case STREAM_MODE:
-        {
-            /*
-             * Future implementation.
-             */
-
-            LCD_Clear();
-
-            LCD_SetCursor(0,0);
-            LCD_Print("UART Stream");
-
-            break;
-        }
-
-
-
-        case SETTINGS_MODE:
-        {
-            /*
-             * Future implementation.
-             */
-
-            LCD_Clear();
-
-            LCD_SetCursor(0,0);
-            LCD_Print("Settings");
-
-            break;
-        }
-
-
-
-        case SYSTEM_INFO_MODE:
-        {
-            /*
-             * Future implementation.
-             */
-
-            LCD_Clear();
-
-            LCD_SetCursor(0,0);
-            LCD_Print("System Info");
-
-            break;
-        }
-
-
-
-        default:
-        {
-            LCD_Clear();
-
-            LCD_SetCursor(0,0);
-
-            LCD_Print("Unknown Mode");
-
-            break;
-        }
-    }
-}
-
-
-
-/******************************************************************************
- *                      Menu Rendering
+ *                         Private Functions
  ******************************************************************************/
 
 /**
@@ -467,33 +341,270 @@ static void MenuRenderer_DrawCurrentScreen(void)
  *      Draw complete menu screen.
  *
  * @details
- *      Rendering sequence:
  *
- *          1. Clear LCD
- *          2. Draw title
- *          3. Draw menu items
+ *      This function is used only when:
  *
+ *          - LCD starts
+ *          - Menu structure changes
+ *          - Window scrolling happens
+ *
+ *      Normal UP/DOWN movement does not call
+ *      this function to avoid LCD flicker.
  */
-static void MenuRenderer_DrawMenu(void)
+static void MenuRenderer_DrawFullMenu(void)
 {
     LCD_Clear();
 
+
     MenuRenderer_DrawTitle();
+
 
     MenuRenderer_DrawItems();
 }
+
+
+
+/**
+ * @brief
+ *      Update only cursor position.
+ *
+ * @details
+ *
+ *      This function does not clear LCD.
+ *
+ *      It only removes the old cursor
+ *      and draws the new cursor.
+ *
+ *      This eliminates visible flicker.
+ */
+static void MenuRenderer_UpdateCursor(
+                    const MenuItem_t *old_item,
+                    const MenuItem_t *new_item)
+{
+    uint8_t old_row;
+
+    uint8_t new_row;
+
+
+
+    old_row = LCD_FIRST_MENU_ROW;
+
+
+    new_row = LCD_FIRST_MENU_ROW;
+
+
+
+    /*
+     * Find old cursor position.
+     */
+
+    {
+        const MenuItem_t *item;
+
+
+        item = display_start_item;
+
+
+        while(item != NULL)
+        {
+            if(item == old_item)
+            {
+                break;
+            }
+
+
+            old_row++;
+
+
+            item = item->next;
+        }
+    }
+
+
+
+    /*
+     * Find new cursor position.
+     */
+
+    {
+        const MenuItem_t *item;
+
+
+        item = display_start_item;
+
+
+        new_row = LCD_FIRST_MENU_ROW;
+
+
+        while(item != NULL)
+        {
+            if(item == new_item)
+            {
+                break;
+            }
+
+
+            new_row++;
+
+
+            item = item->next;
+        }
+    }
+
+
+
+    /*
+     * Remove old cursor.
+     */
+
+    LCD_SetCursor(
+            old_row,
+            LCD_CURSOR_COLUMN);
+
+
+    LCD_PrintChar(' ');
+
+
+
+    /*
+     * Draw new cursor.
+     */
+
+    LCD_SetCursor(
+            new_row,
+            LCD_CURSOR_COLUMN);
+
+
+    LCD_PrintChar('>');
+}
+
+
+
+/**
+ * @brief
+ *      Check if selected item needs scrolling.
+ *
+ * @details
+ *
+ *      Example:
+ *
+ *      Visible:
+ *
+ *          Live Monitor
+ *          Start Stream
+ *          Settings
+ *
+ *
+ *      Selected:
+ *
+ *          System Info
+ *
+ *
+ *      Window must move down.
+ */
+static bool MenuRenderer_NeedScroll(
+                    const MenuItem_t *selected)
+{
+    const MenuItem_t *item;
+
+
+    uint8_t count;
+
+
+
+    item = display_start_item;
+
+
+    count = 0U;
+
+
+
+    while(item != NULL)
+    {
+        if(item == selected)
+        {
+            return false;
+        }
+
+
+
+        item = item->next;
+
+
+        count++;
+
+
+
+        if(count >= MENU_VISIBLE_ITEMS)
+        {
+            break;
+        }
+    }
+
+
+
+    return true;
+}
+
+
+
+/**
+ * @brief
+ *      Update visible menu window.
+ *
+ * @details
+ *
+ *      Moves the display window one item down.
+ *
+ *
+ * Example:
+ *
+ * Before:
+ *
+ *      Live Monitor
+ *      Start Stream
+ *      Settings
+ *
+ *
+ * After:
+ *
+ *      Start Stream
+ *      Settings
+ *      System Info
+ *
+ */
+static void MenuRenderer_UpdateWindow(void)
+{
+    if(display_start_item == NULL)
+    {
+        return;
+    }
+
+
+
+    if(display_start_item->next != NULL)
+    {
+        display_start_item =
+                display_start_item->next;
+    }
+
+
+
+    MenuRenderer_DrawFullMenu();
+}
+
+
 
 /**
  * @brief
  *      Draw menu title.
  *
  * @details
- *      The title is always displayed on the first LCD row.
  *
- *      At the moment the title is fixed because only one
- *      root menu exists.
+ *      The title remains fixed.
  *
- *      Future versions may display the current submenu title.
+ *      It is always located
+ *      on LCD row zero.
  */
 static void MenuRenderer_DrawTitle(void)
 {
@@ -505,12 +616,14 @@ static void MenuRenderer_DrawTitle(void)
 
 
 
-    MenuRenderer_ClearLine(MENU_TITLE_ROW);
+    MenuRenderer_ClearLine(
+            LCD_TITLE_ROW);
 
 
 
-    LCD_SetCursor(MENU_TITLE_ROW,
-                  0U);
+    LCD_SetCursor(
+            LCD_TITLE_ROW,
+            0U);
 
 
 
@@ -527,156 +640,98 @@ static void MenuRenderer_DrawTitle(void)
  *      Draw visible menu items.
  *
  * @details
- *      The renderer displays three menu items:
  *
- *          Row 1 : Previous item
- *          Row 2 : Current item
- *          Row 3 : Next item
+ *      Three menu items are displayed.
  *
- *      This produces a smooth navigation effect while
- *      keeping the renderer independent from menu logic.
+ *      The selected item receives cursor.
  */
 static void MenuRenderer_DrawItems(void)
 {
-    const MenuItem_t *current;
-
-    const MenuItem_t *previous;
-
-    const MenuItem_t *next;
+    const MenuItem_t *item;
 
 
-
-    current = Menu_GetCurrentItem();
+    uint8_t row;
 
 
 
-    if(current == NULL)
+    item = display_start_item;
+
+
+    row = LCD_FIRST_MENU_ROW;
+
+
+
+    while((item != NULL) &&
+          (row <= LCD_LAST_MENU_ROW))
     {
-        return;
-    }
+        bool selected;
 
 
 
-    previous = current->prev;
-
-    next = current->next;
-
+        selected =
+            (item == Menu_GetCurrentItem());
 
 
-    /*
-     * Draw previous menu item.
-     */
 
-    if(previous != NULL)
-    {
         MenuRenderer_DrawItem(
-                        MENU_LINE1_ROW,
-                        previous,
-                        false);
-    }
-    else
-    {
-        MenuRenderer_ClearLine(MENU_LINE1_ROW);
+                row,
+                item,
+                selected);
+
+
+
+        item = item->next;
+
+
+        row++;
     }
 
 
 
     /*
-     * Draw current menu item.
+     * Clear unused LCD rows.
      */
 
-    MenuRenderer_DrawItem(
-                    MENU_LINE2_ROW,
-                    current,
-                    true);
-
-
-
-    /*
-     * Draw next menu item.
-     */
-
-    if(next != NULL)
+    while(row <= LCD_LAST_MENU_ROW)
     {
-        MenuRenderer_DrawItem(
-                        MENU_LINE3_ROW,
-                        next,
-                        false);
-    }
-    else
-    {
-        MenuRenderer_ClearLine(MENU_LINE3_ROW);
+        MenuRenderer_ClearLine(row);
+
+
+        row++;
     }
 }
-
-
+/******************************************************************************
+ *                      Menu Item Rendering
+ ******************************************************************************/
 
 /**
- * @brief
- *      Clear one LCD line.
- *
- * @param row
- *      LCD row number.
- *
- * @details
- *      Clears exactly one LCD row without affecting
- *      the remaining display.
- */
-static void MenuRenderer_ClearLine(uint8_t row)
-{
-    uint8_t column;
-
-
-
-    LCD_SetCursor(row,
-                  0U);
-
-
-
-    for(column = 0U;
-        column < LCD_LINE_LENGTH;
-        column++)
-    {
-        LCD_PrintChar(' ');
-    }
-}
-
-/******************************************************************************
  * @brief
  *      Draw one menu item.
  *
  * @param row
- *      LCD row.
+ *      LCD row where item is displayed.
  *
  * @param item
- *      Pointer to menu item.
+ *      Menu item information.
  *
  * @param selected
- *      true  -> draw selection arrow
- *      false -> draw normal item
+ *      true:
+ *          Draw cursor.
+ *
+ *      false:
+ *          Draw normal text.
  *
  * @details
  *
- *      Example:
+ *      This function only handles one LCD line.
  *
- *          > Live Monitor
- *
- *            Start Stream
- *
- *      This function only renders one line.
- *
- *      Navigation logic remains inside menu.c.
- *
- ******************************************************************************/
+ *      It does not modify menu state.
+ */
 static void MenuRenderer_DrawItem(
                     uint8_t row,
                     const MenuItem_t *item,
                     bool selected)
 {
-    /*
-     * Safety check.
-     */
-
     if(item == NULL)
     {
         return;
@@ -685,19 +740,18 @@ static void MenuRenderer_DrawItem(
 
 
     /*
-     * Clear current LCD line before drawing.
+     * Clear line before writing.
      */
-
     MenuRenderer_ClearLine(row);
 
 
 
     /*
-     * Draw selection marker.
+     * Draw cursor position.
      */
-
-    LCD_SetCursor(row,
-                  MENU_ARROW_COLUMN);
+    LCD_SetCursor(
+            row,
+            LCD_CURSOR_COLUMN);
 
 
 
@@ -715,139 +769,156 @@ static void MenuRenderer_DrawItem(
     /*
      * Draw menu text.
      */
+    LCD_SetCursor(
+            row,
+            LCD_TEXT_COLUMN);
 
-    LCD_SetCursor(row,
-                  MENU_TEXT_COLUMN);
+
 
     LCD_Print(item->name);
 }
 
 
 
-/******************************************************************************
- *                  Renderer Design Notes
+/**
+ * @brief
+ *      Clear one LCD row.
  *
- *  Why separate DrawItem()?
+ * @param row
+ *      LCD row number.
  *
- *      Because every menu entry is rendered exactly
- *      the same way.
+ * @details
  *
- *      If one day we decide to:
+ *      Only the requested row is cleared.
  *
- *          - use custom characters
- *          - draw icons
- *          - animate cursor
- *          - invert colors (TFT)
- *
- *      only this function must change.
- *
- *      The rest of renderer remains untouched.
- *
- ******************************************************************************/
+ *      Other rows remain unchanged.
+ */
+static void MenuRenderer_ClearLine(
+                    uint8_t row)
+{
+    uint8_t column;
+
+
+
+    LCD_SetCursor(
+            row,
+            0U);
+
+
+
+    for(column = 0U;
+        column < LCD_WIDTH;
+        column++)
+    {
+        LCD_PrintChar(' ');
+    }
+}
+
+
 
 /******************************************************************************
- *                      Rendering Optimization Notes
- *
- *  Current Strategy
- *  ----------------
- *
- *  The renderer performs a complete redraw whenever:
- *
- *      • Selected menu item changes
- *      • Application mode changes
- *
- *  Because the LCD contains only four rows and the I2C bus
- *  is relatively slow compared with the MCU, a complete redraw
- *  keeps the implementation simple while still providing very
- *  good responsiveness.
- *
- *  Future versions may introduce:
- *
- *      • Dirty-line rendering
- *      • Dirty-region rendering
- *      • Character-level updates
- *
- *  if display performance ever becomes a limiting factor.
- *
+ *                          Design Notes
  ******************************************************************************/
 
-/******************************************************************************
- *                      Future Expansion Guide
+/*
+ * Rendering Strategy
  *
- *  The renderer has intentionally been designed so that adding
- *  a new application screen does NOT require modifications to
- *  the existing menu logic.
+ * ------------------
  *
- *  Example:
+ * This renderer intentionally avoids LCD_Clear()
+ * during normal navigation.
  *
- *      case MONITOR_MODE:
  *
- *          MonitorRenderer_Draw();
+ * Previous behavior:
  *
- *          break;
+ *      Button press
+ *            |
+ *            v
+ *      LCD_Clear()
+ *            |
+ *            v
+ *      Redraw everything
  *
- *  or
  *
- *      case SETTINGS_MODE:
+ * Result:
  *
- *          SettingsRenderer_Draw();
+ *      - Visible flicker
+ *      - Slow refresh
+ *      - Unnecessary I2C traffic
  *
- *          break;
  *
- *  Therefore:
  *
- *      menu.c
- *          controls navigation
+ * New behavior:
  *
- *      menu_renderer.c
- *          controls presentation
+ *      Button press
+ *            |
+ *            v
+ *      Move cursor only
  *
- *      monitor_renderer.c
- *          controls monitor screen
  *
- *      stream_renderer.c
- *          controls stream screen
+ * When window reaches the end:
  *
- ******************************************************************************/
+ *      Scroll menu window
+ *            |
+ *            v
+ *      Redraw visible area
+ *
+ *
+ * This provides:
+ *
+ *      - Smooth cursor movement
+ *      - Minimal LCD traffic
+ *      - Better user experience
+ */
+
+
 
 /******************************************************************************
- *                      Maintenance Notes
- *
- *  IMPORTANT
- *  =========
- *
- *  Do NOT place application logic inside this module.
- *
- *  Renderer modules should NEVER:
- *
- *      • Change menu state
- *      • Execute actions
- *      • Read GPIO
- *      • Access ADC
- *      • Start UART
- *      • Modify settings
- *
- *  Renderer modules only display information.
- *
+ *                          Future Expansion
  ******************************************************************************/
 
-/******************************************************************************
- *                      File Summary
+/*
+ * Possible future improvements:
  *
- *  Public Functions
+ *      - Submenu title support
+ *
+ *      - Settings menu renderer
+ *
+ *      - Custom LCD characters
+ *
+ *      - Persian character mapping
+ *
+ *      - Long menu scrolling
+ *
+ *      - Menu icons
+ *
+ *
+ * The current architecture keeps these additions
+ * isolated from menu.c.
+ */
+
+
+
+/******************************************************************************
+ *                          File Summary
+ ******************************************************************************/
+
+/*
+ * Public Functions:
  *
  *      MenuRenderer_Init()
  *
  *      MenuRenderer_Update()
  *
- *      MenuRenderer_Refresh()
  *
  *
- *  Private Functions
+ * Private Functions:
  *
- *      MenuRenderer_DrawCurrentScreen()
+ *      MenuRenderer_DrawFullMenu()
  *
- *      MenuRenderer_DrawMenu()
+ *      MenuRenderer_UpdateCursor()
+ *
+ *      MenuRenderer_UpdateWindow()
  *
  *      MenuRenderer_DrawTitle()
  *
@@ -857,63 +928,11 @@ static void MenuRenderer_DrawItem(
  *
  *      MenuRenderer_ClearLine()
  *
- ******************************************************************************/
+ *      MenuRenderer_NeedScroll()
+ *
+ */
 
 
-/******************************************************************************
- *                      Version History
- *
- *  Version 1.0.0
- *  -------------
- *
- *      Initial implementation.
- *
- *      Features:
- *
- *          • Complete renderer architecture
- *          • LCD menu rendering
- *          • Read-only interaction with menu framework
- *          • Automatic refresh on state change
- *          • Cursor rendering
- *          • Modular design for future screens
- *
- *------------------------------------------------------------------------------
- *
- *  Planned Version 1.1.0
- *
- *      □ Dirty-line refresh
- *      □ Scrollable menus
- *      □ Submenu rendering
- *      □ UTF-8/Persian rendering layer
- *      □ Icon support
- *      □ TFT renderer compatibility
- *
- ******************************************************************************/
-
-/******************************************************************************
- *                      Coding Standard Compliance
- *
- *  This module follows the project coding rules:
- *
- *      ✔ One responsibility
- *
- *          Renderer only.
- *
- *      ✔ Hardware independent
- *
- *          Uses LCD API only.
- *
- *      ✔ No GPIO access
- *
- *      ✔ No HAL dependency
- *
- *      ✔ Read-only access to Menu Framework
- *
- *      ✔ Fully documented
- *
- *      ✔ Easy to extend
- *
- ******************************************************************************/
 
 /******************************************************************************
  *                              End of File

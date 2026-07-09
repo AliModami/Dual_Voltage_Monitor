@@ -181,7 +181,7 @@ int main(void)
     /*
      * Draw the initial menu immediately.
      */
-    MenuRenderer_Refresh();
+    MenuRenderer_Update();
 
     /*
      * Startup delay.
