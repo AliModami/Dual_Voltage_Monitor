@@ -1,46 +1,69 @@
 /******************************************************************************
  * @file    menu.c
- * @brief   Menu Framework Implementation
+ * @brief   Menu Controller Implementation
  *-----------------------------------------------------------------------------
  * Project :
  *      Dual Voltage Monitor
  *
  * Description :
  *
- *      This file implements the application menu framework.
+ *      This module implements the menu controller layer.
  *
- *      Responsibilities:
  *
- *          - Manage menu tree
- *          - Track selected item
- *          - Process navigation commands
- *          - Execute menu actions
- *          - Provide read-only information for renderer
+ *      The responsibility of this module is:
  *
- *      This module does NOT access:
+ *          - Keep runtime menu state.
+ *          - Receive button commands.
+ *          - Navigate inside menu tree.
+ *          - Execute selected menu actions.
+ *          - Provide information to renderer.
  *
- *          - LCD
- *          - GPIO
- *          - ADC
- *          - UART
+ *
+ *      This module DOES NOT:
+ *
+ *          - Define menu structure.
+ *          - Store menu items.
+ *          - Access LCD hardware.
+ *          - Access GPIO.
+ *          - Access ADC.
+ *          - Access UART.
+ *
  *
  *-----------------------------------------------------------------------------
  *
  * Architecture:
  *
- *          Buttons
- *             |
- *             v
- *       button_app.c
- *             |
- *             v
- *          menu.c
- *             |
- *             v
- *    menu_renderer.c
- *             |
- *             v
- *       lcd_i2c.c
+ *
+ *              button_app
+ *                  |
+ *                  v
+ *              menu.c
+ *                  |
+ *        +---------+----------+
+ *        |                    |
+ *        v                    v
+ *   menu_data.c        menu_renderer.c
+ *
+ *
+ *
+ *      menu_data.c
+ *
+ *          Owns:
+ *
+ *              - Menu tree
+ *              - Menu items
+ *              - Text
+ *              - Actions
+ *
+ *
+ *      menu.c
+ *
+ *          Owns:
+ *
+ *              - Current position
+ *              - Selection
+ *              - Navigation state
+ *
  *
  *-----------------------------------------------------------------------------
  *
@@ -48,9 +71,21 @@
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.2.0
+ *      2.0.0
+ *
+ *
+ * Change History :
+ *
+ *      2.0.0
+ *
+ *          - Migrated from old linked-list menu.
+ *
+ *          - Removed menu tree definition.
+ *
+ *          - Added compatibility with Plan A architecture.
  *
  ******************************************************************************/
+
 
 
 
@@ -59,6 +94,9 @@
  ******************************************************************************/
 
 #include "menu.h"
+
+#include "menu_data.h"
+#include "menu_actions.h"
 
 #include <stddef.h>
 
@@ -69,29 +107,39 @@
  *                         Private Variables
  ******************************************************************************/
 
-/*
- * Current application mode.
+/**
+ * @brief
+ *      Current application mode.
+ *
+ *      This value represents the active
+ *      application screen.
  */
-
 static Menu_Mode_t current_mode = MENU_MODE;
 
 
 
-/*
- * Currently selected menu item.
- */
-
-static MenuItem_t *current_item = NULL;
-
-
-
-/*
- * Current menu title.
+/**
+ * @brief
+ *      Runtime navigation state.
  *
- * Used by renderer as fixed LCD header.
+ *      This structure contains:
+ *
+ *          - Current menu
+ *          - Selected item
+ *          - Scroll position
  */
+static MenuState_t menu_state;
 
-static const char *current_title = "Main Menu";
+
+
+/**
+ * @brief
+ *      Refresh request flag.
+ *
+ *      Renderer checks this flag
+ *      before redrawing LCD.
+ */
+static bool refresh_required = false;
 
 
 
@@ -100,188 +148,36 @@ static const char *current_title = "Main Menu";
  *                         Private Function Prototypes
  ******************************************************************************/
 
-/*
- * Move selection downward.
+/**
+ * @brief
+ *      Move selection upward.
  */
-static void Menu_MoveNext(void);
+static void Menu_MoveUp(void);
 
 
 
-/*
- * Move selection upward.
+/**
+ * @brief
+ *      Move selection downward.
  */
-static void Menu_MovePrevious(void);
+static void Menu_MoveDown(void);
 
 
 
-/*
- * Execute selected item.
+/**
+ * @brief
+ *      Execute selected menu item.
  */
-static void Menu_EnterItem(void);
+static void Menu_ExecuteSelected(void);
 
 
 
-/*
- * Return to parent menu.
+/**
+ * @brief
+ *      Return to previous menu.
  */
-static void Menu_Back(void);
+static void Menu_ReturnBack(void);
 
-
-
-/*
- * Menu actions.
- */
-
-static void Menu_ActionMonitor(void);
-
-static void Menu_ActionStream(void);
-
-static void Menu_ActionSettings(void);
-
-static void Menu_ActionSystemInfo(void);
-
-
-
-
-/******************************************************************************
- *                         Menu Tree Declaration
- ******************************************************************************/
-
-/*
- * Forward declarations.
- */
-
-static MenuItem_t menu_root;
-
-static MenuItem_t menu_monitor;
-
-static MenuItem_t menu_stream;
-
-static MenuItem_t menu_settings;
-
-static MenuItem_t menu_system_info;
-
-
-
-
-/******************************************************************************
- *                         Menu Tree Definition
- ******************************************************************************/
-
-/*
- * Root item.
- */
-
-static MenuItem_t menu_root =
-{
-    .name   = "Main Menu",
-
-    .action = NULL,
-
-    .parent = NULL,
-
-    .child  = &menu_monitor,
-
-    .next   = NULL,
-
-    .prev   = NULL
-};
-
-
-
-/*
- * Live Monitor item.
- */
-
-static MenuItem_t menu_monitor =
-{
-    .name   = "Live Monitor",
-
-    .action = Menu_ActionMonitor,
-
-    .parent = &menu_root,
-
-    .child  = NULL,
-
-    /*
-     * Normal linked list.
-     *
-     * No wrap around.
-     */
-
-    .next   = &menu_stream,
-
-    .prev   = NULL
-};
-
-
-
-/*
- * Stream item.
- */
-
-static MenuItem_t menu_stream =
-{
-    .name   = "Start Stream",
-
-    .action = Menu_ActionStream,
-
-    .parent = &menu_root,
-
-    .child  = NULL,
-
-    .next   = &menu_settings,
-
-    .prev   = &menu_monitor
-};
-
-
-
-/*
- * Settings item.
- */
-
-static MenuItem_t menu_settings =
-{
-    .name   = "Settings",
-
-    .action = Menu_ActionSettings,
-
-    .parent = &menu_root,
-
-    .child  = NULL,
-
-    .next   = &menu_system_info,
-
-    .prev   = &menu_stream
-};
-
-
-
-/*
- * System information item.
- */
-
-static MenuItem_t menu_system_info =
-{
-    .name   = "System Info",
-
-    .action = Menu_ActionSystemInfo,
-
-    .parent = &menu_root,
-
-    .child  = NULL,
-
-    /*
-     * Last item.
-     *
-     * DOWN stops here.
-     */
-
-    .next   = NULL,
-
-    .prev   = &menu_settings
-};
 
 
 
@@ -291,47 +187,118 @@ static MenuItem_t menu_system_info =
 
 /**
  * @brief
- *      Initialize menu framework.
+ *      Initialize menu controller.
+ *
+ * @details
+ *
+ *      This function does not create menus.
+ *
+ *      Menu structure is already created
+ *      inside menu_data.c.
+ *
  */
 void Menu_Init(void)
 {
-    current_mode = MENU_MODE;
 
+    const Menu_t *root_menu;
 
-    current_title = "Main Menu";
 
 
     /*
-     * First selectable item.
+     * Get root menu from data layer.
      */
+    root_menu = MenuData_GetRoot();
 
-    current_item = &menu_monitor;
+
+
+    if(root_menu == NULL)
+    {
+        return;
+    }
+
+
+
+    /*
+     * Initialize runtime state.
+     */
+    menu_state.current_menu = root_menu;
+
+
+    /*
+     * First item is selected.
+     */
+    menu_state.selected_index = 0U;
+
+
+    /*
+     * First visible item starts
+     * from beginning.
+     */
+    menu_state.top_index = 0U;
+
+
+
+    /*
+     * Default application mode.
+     */
+    current_mode = MENU_MODE;
+
+
+
+    /*
+     * Force first LCD rendering.
+     */
+    refresh_required = true;
+
 }
+
 
 
 
 /**
  * @brief
  *      Periodic menu task.
+ *
+ * @details
+ *
+ *      Reserved for future features:
+ *
+ *          - Long press handling.
+ *          - Automatic scrolling.
+ *          - Menu timeout.
+ *
  */
 void Menu_Task(void)
 {
 
+    /*
+     * Currently no periodic processing
+     * is required.
+     */
+
 }
+
+
 
 
 
 /**
  * @brief
  *      Process button command.
+ *
+ * @param command
+ *      Button application command.
  */
-void Menu_ProcessCommand(Button_AppCommand_t command)
+void Menu_ProcessCommand(
+        Button_AppCommand_t command)
 {
+
     switch(command)
     {
+
         case BUTTON_CMD_UP:
 
-            Menu_MovePrevious();
+            Menu_MoveUp();
 
             break;
 
@@ -339,7 +306,7 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
 
         case BUTTON_CMD_DOWN:
 
-            Menu_MoveNext();
+            Menu_MoveDown();
 
             break;
 
@@ -347,7 +314,7 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
 
         case BUTTON_CMD_ENTER:
 
-            Menu_EnterItem();
+            Menu_ExecuteSelected();
 
             break;
 
@@ -355,7 +322,7 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
 
         case BUTTON_CMD_BACK:
 
-            Menu_Back();
+            Menu_ReturnBack();
 
             break;
 
@@ -364,150 +331,14 @@ void Menu_ProcessCommand(Button_AppCommand_t command)
         default:
 
             break;
+
     }
+
 }
 
 /******************************************************************************
- *                  Read Only Renderer Interface
+ *                         Private Navigation Functions
  ******************************************************************************/
-
-/**
- * @brief
- *      Return current selected menu item.
- *
- * @details
- *      Renderer uses this function to know
- *      which item is selected.
- *
- *      No modification is allowed.
- *
- * @return
- *      Pointer to current item.
- */
-const MenuItem_t *Menu_GetCurrentItem(void)
-{
-    return current_item;
-}
-
-
-
-/**
- * @brief
- *      Return root menu item.
- *
- * @return
- *      Pointer to root item.
- */
-const MenuItem_t *Menu_GetRootItem(void)
-{
-    return &menu_root;
-}
-
-
-
-/**
- * @brief
- *      Return current menu title.
- *
- * @details
- *      Renderer displays this text
- *      on the fixed title row.
- *
- * @return
- *      Pointer to title string.
- */
-const char *Menu_GetCurrentMenuTitle(void)
-{
-    return current_title;
-}
-
-
-
-/**
- * @brief
- *      Calculate LCD row of selected item.
- *
- * @details
- *      This function is used by the
- *      incremental renderer.
- *
- *      The current LCD design shows:
- *
- *          Row 0 : Title
- *
- *          Row 1 : Item above
- *
- *          Row 2 : Selected item
- *
- *          Row 3 : Item below
- *
- *
- *      Therefore the selected item
- *      is always rendered on row 2.
- *
- * @param item
- *      Menu item pointer.
- *
- * @return
- *      LCD row number.
- */
-uint8_t Menu_GetItemRow(const MenuItem_t *item)
-{
-    if(item == NULL)
-    {
-        return 0U;
-    }
-
-
-
-    if(item == current_item)
-    {
-        return 2U;
-    }
-
-
-
-    return 0U;
-}
-
-
-
-
-/******************************************************************************
- *                         Private Functions
- ******************************************************************************/
-
-
-/**
- * @brief
- *      Move selection downward.
- *
- * @details
- *
- *      Navigation stops at the last item.
- *
- *      No circular movement exists.
- *
- */
-static void Menu_MoveNext(void)
-{
-    if(current_item == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Move only when next item exists.
-     */
-
-    if(current_item->next != NULL)
-    {
-        current_item = current_item->next;
-    }
-}
-
 
 
 /**
@@ -516,14 +347,163 @@ static void Menu_MoveNext(void)
  *
  * @details
  *
- *      Navigation stops at first item.
+ *      The selected index is decreased
+ *      until the first item is reached.
  *
- *      No circular movement exists.
+ *      Circular navigation is intentionally
+ *      disabled.
  *
  */
-static void Menu_MovePrevious(void)
+static void Menu_MoveUp(void)
 {
-    if(current_item == NULL)
+
+    if(menu_state.current_menu == NULL)
+    {
+        return;
+    }
+
+
+
+    if(menu_state.selected_index > 0U)
+    {
+        menu_state.selected_index--;
+
+        /*
+         * Update visible window.
+         */
+        if(menu_state.selected_index <
+           menu_state.top_index)
+        {
+            menu_state.top_index =
+                    menu_state.selected_index;
+        }
+
+
+        refresh_required = true;
+    }
+
+}
+
+
+
+
+
+/**
+ * @brief
+ *      Move selection downward.
+ *
+ * @details
+ *
+ *      Navigation stops at the last
+ *      available item.
+ *
+ */
+static void Menu_MoveDown(void)
+{
+
+    uint8_t item_count;
+
+
+
+    if(menu_state.current_menu == NULL)
+    {
+        return;
+    }
+
+
+
+    item_count =
+        MenuData_GetItemCount(
+                menu_state.current_menu);
+
+
+
+    if(item_count == 0U)
+    {
+        return;
+    }
+
+
+
+    if(menu_state.selected_index <
+       (item_count - 1U))
+    {
+
+        menu_state.selected_index++;
+
+
+
+        /*
+         * Check scrolling window.
+         *
+         * LCD shows only limited rows.
+         */
+        if(menu_state.selected_index >=
+           (menu_state.top_index +
+            MENU_VISIBLE_ITEMS))
+        {
+
+            menu_state.top_index++;
+
+        }
+
+
+
+        refresh_required = true;
+
+    }
+
+}
+
+
+
+
+
+
+
+/**
+ * @brief
+ *      Execute current selected item.
+ *
+ * @details
+ *
+ *      Two possibilities exist:
+ *
+ *
+ *      1)
+ *          Item has submenu.
+ *
+ *          Enter submenu.
+ *
+ *
+ *      2)
+ *          Item has action.
+ *
+ *          Execute callback.
+ *
+ */
+static void Menu_ExecuteSelected(void)
+{
+
+    const MenuItem_t *item;
+
+
+
+    if(menu_state.current_menu == NULL)
+    {
+        return;
+    }
+
+
+
+    item =
+        MenuData_GetItem(
+            menu_state.current_menu,
+            menu_state.selected_index);
+
+
+
+    if(item == NULL)
     {
         return;
     }
@@ -531,253 +511,520 @@ static void Menu_MovePrevious(void)
 
 
     /*
-     * Move only when previous item exists.
+     * Case 1:
+     *
+     * Item opens submenu.
      */
-
-    if(current_item->prev != NULL)
+    if(item->type == MENU_ITEM_SUBMENU)
     {
-        current_item = current_item->prev;
-    }
-}
+
+        if(item->submenu != NULL)
+        {
+
+            menu_state.current_menu =
+                    item->submenu;
 
 
+            menu_state.selected_index = 0U;
 
-/**
- * @brief
- *      Execute selected item.
- */
-static void Menu_EnterItem(void)
-{
-    if(current_item == NULL)
-    {
+
+            menu_state.top_index = 0U;
+
+
+            refresh_required = true;
+
+        }
+
+
         return;
     }
 
 
 
-    if(current_item->action != NULL)
+
+    /*
+     * Case 2:
+     *
+     * Execute application action.
+     */
+    if(item->action != NULL)
     {
-        current_item->action();
+
+        item->action();
+
+
+        refresh_required = true;
+
     }
+
 }
+
+
+
+
 
 
 
 /**
  * @brief
  *      Return to parent menu.
+ *
+ * @details
+ *
+ *      If current menu has parent,
+ *      navigation returns one level upward.
+ *
  */
-static void Menu_Back(void)
+static void Menu_ReturnBack(void)
 {
-    if(current_item == NULL)
+
+    if(menu_state.current_menu == NULL)
     {
         return;
     }
 
 
 
-    if(current_item->parent != NULL)
+    if(menu_state.current_menu->parent != NULL)
     {
-        current_item = current_item->parent;
+
+        menu_state.current_menu =
+                menu_state.current_menu->parent;
+
+
+
+        menu_state.selected_index = 0U;
+
+
+
+        menu_state.top_index = 0U;
+
+
 
         current_mode = MENU_MODE;
 
-        current_title = "Main Menu";
+
+
+        refresh_required = true;
+
     }
+
 }
 
 
 
+
+
+
+
 /******************************************************************************
- *                         Menu Actions
+ *                         Public State Access Functions
  ******************************************************************************/
 
 
 /**
  * @brief
- *      Enter Live Monitor screen.
+ *      Get current application mode.
+ *
+ * @return
+ *      Current mode.
  */
-static void Menu_ActionMonitor(void)
+Menu_Mode_t Menu_GetMode(void)
 {
-    current_mode = MONITOR_MODE;
+    return current_mode;
 }
+
+
+
+
 
 
 
 /**
  * @brief
- *      Enter Stream screen.
+ *      Get current menu state.
+ *
+ * @details
+ *
+ *      Renderer uses this information
+ *      to draw menu.
+ *
+ *      Returned pointer must not be modified.
+ *
  */
-static void Menu_ActionStream(void)
+const MenuState_t *Menu_GetState(void)
 {
-    current_mode = STREAM_MODE;
+    return &menu_state;
 }
+
+
+
+
 
 
 
 /**
  * @brief
- *      Enter Settings menu.
+ *      Request renderer update.
+ *
  */
-static void Menu_ActionSettings(void)
+void Menu_RequestRefresh(void)
 {
-    current_mode = SETTINGS_MODE;
 
+    refresh_required = true;
 
-    /*
-     * Future submenu expansion:
-     *
-     * current_title = "Settings Menu";
-     *
-     * when child items are added.
-     */
 }
+
+
+
+
 
 
 
 /**
  * @brief
- *      Enter System Information screen.
+ *      Check refresh status.
+ *
+ * @return
+ *
+ *      true:
+ *          Renderer should redraw.
+ *
  */
-static void Menu_ActionSystemInfo(void)
+bool Menu_IsRefreshRequired(void)
 {
-    current_mode = SYSTEM_INFO_MODE;
+
+    return refresh_required;
+
 }
 
 
 
-/******************************************************************************
- *                         Additional Notes
- ******************************************************************************/
 
-/*
- * Menu framework behavior:
- *
- *
- * 1) Navigation
- * ----------------
- *
- * The menu uses a linear linked list.
- *
- * Example:
- *
- *      Live Monitor
- *             |
- *             v
- *      Start Stream
- *             |
- *             v
- *       Settings
- *             |
- *             v
- *       System Info
- *
- *
- * The first item has:
- *
- *      prev = NULL
- *
- * The last item has:
- *
- *      next = NULL
- *
- *
- * Therefore:
- *
- *      UP at first item:
- *
- *          No action
- *
- *
- *      DOWN at last item:
- *
- *          No action
- *
- *
- * This creates a professional
- * non-circular menu behavior.
+
+
+
+/**
+ * @brief
+ *      Clear refresh flag.
  *
  */
+void Menu_ClearRefreshRequest(void)
+{
 
+    refresh_required = false;
 
-
-/*
- * Renderer cooperation:
- *
- * menu.c owns:
- *
- *      - Selection state
- *      - Navigation
- *      - Actions
- *
- *
- * menu_renderer.c owns:
- *
- *      - LCD drawing
- *      - Cursor display
- *      - Text positioning
- *
- *
- * The renderer never changes
- * the menu state.
- *
- */
-
-
-
-/*
- * Future Settings submenu example:
- *
- *
- * Settings
- *
- *       |
- *       +---- High Voltage
- *
- *       |
- *       +---- Low Voltage
- *
- *       |
- *       +---- Switch Delay
- *
- *
- * At that time:
- *
- * menu_settings.child
- *
- * will point to the first
- * settings item.
- *
- */
-
-
+}
 
 /******************************************************************************
- *                         Version History
- ******************************************************************************/
+*                         Renderer Interface
+******************************************************************************/
 
-/*
- *
- * Version 1.2.0
- *
- * Changes:
- *
- *      - Removed circular navigation
- *
- *      - Added fixed menu boundaries
- *
- *      - Added renderer title interface
- *
- *      - Added item row interface
- *
- *      - Prepared framework for
- *        incremental LCD rendering
- *
- *
- */
+/**
+* @brief
+*      Get currently selected menu item.
+*
+* @details
+*
+*      Renderer uses this function
+*      to identify highlighted item.
+*
+*      Returned pointer is read-only.
+*
+* @return
+*      Selected menu item.
+*
+*/
+const MenuItem_t *Menu_GetSelectedItem(void)
+{
+
+   if(menu_state.current_menu == NULL)
+   {
+       return NULL;
+   }
+
+
+
+   return MenuData_GetItem(
+           menu_state.current_menu,
+           menu_state.selected_index);
+
+}
+
+
+
+
+
+
+/**
+* @brief
+*      Get current menu object.
+*
+* @details
+*
+*      Renderer uses this function
+*      for drawing visible items.
+*
+* @return
+*      Current menu pointer.
+*
+*/
+const Menu_t *Menu_GetCurrentMenu(void)
+{
+
+   return menu_state.current_menu;
+
+}
+
+
+
+
+
+
+/**
+* @brief
+*      Get current menu title.
+*
+* @details
+*
+*      LCD first row is reserved
+*      for menu title.
+*
+* @return
+*      Title string.
+*
+*/
+const char *Menu_GetCurrentTitle(void)
+{
+
+   if(menu_state.current_menu == NULL)
+   {
+       return "";
+   }
+
+
+
+   return menu_state.current_menu->title;
+
+}
+
+
+
+
+
+
+/**
+* @brief
+*      Get visible start index.
+*
+* @details
+*
+*      Renderer uses this value
+*      for scrolling.
+*
+* @return
+*      First visible item index.
+*
+*/
+uint8_t Menu_GetTopIndex(void)
+{
+
+   return menu_state.top_index;
+
+}
+
+
+
+
+
+
+/**
+* @brief
+*      Get selected item index.
+*
+* @return
+*      Current selection index.
+*
+*/
+uint8_t Menu_GetSelectedIndex(void)
+{
+
+   return menu_state.selected_index;
+
+}
+
+
+
+
+
+
+/**
+* @brief
+*      Calculate LCD row for item.
+*
+* @details
+*
+*      LCD layout:
+*
+*
+*          Row 0
+*          +----------------+
+*          | Menu Title     |
+*          +----------------+
+*
+*          Row 1
+*          | Item 1         |
+*
+*          Row 2
+*          | > Item 2       |
+*
+*          Row 3
+*          | Item 3         |
+*
+*
+*      Selected item is always
+*      displayed on the middle row
+*      when possible.
+*
+* @param item_index
+*      Menu item index.
+*
+* @return
+*      LCD row number.
+*
+*/
+uint8_t Menu_GetItemDisplayRow(
+       uint8_t item_index)
+{
+
+   uint8_t relative_position;
+
+
+
+   if(item_index < menu_state.top_index)
+   {
+       return 0U;
+   }
+
+
+
+   relative_position =
+           item_index -
+           menu_state.top_index;
+
+
+
+   /*
+    * Title occupies row zero.
+    */
+   return MENU_FIRST_ITEM_ROW +
+          relative_position;
+
+}
+
+
+
+
+
+
+/**
+* @brief
+*      Get number of visible menu items.
+*
+* @details
+*
+*      Prevents renderer from
+*      drawing outside LCD area.
+*
+* @return
+*      Visible item count.
+*
+*/
+uint8_t Menu_GetVisibleCount(void)
+{
+
+   uint8_t remaining_items;
+
+
+
+   if(menu_state.current_menu == NULL)
+   {
+       return 0U;
+   }
+
+
+
+   if(menu_state.top_index >=
+      menu_state.current_menu->item_count)
+   {
+       return 0U;
+   }
+
+
+
+   remaining_items =
+       menu_state.current_menu->item_count -
+       menu_state.top_index;
+
+
+
+   if(remaining_items > MENU_VISIBLE_ITEMS)
+   {
+       return MENU_VISIBLE_ITEMS;
+   }
+
+
+   return remaining_items;
+
+}
+
+
+
 
 
 
 /******************************************************************************
- *                              End of File
- ******************************************************************************/
+*                              End Of File
+******************************************************************************/
+
+/*
+*
+* Version 2.0.0
+*
+* Plan A migration completed.
+*
+*
+* Changes:
+*
+*      - Removed old linked-list menu ownership.
+*
+*      - Moved menu tree to menu_data.c.
+*
+*      - Added separated controller layer.
+*
+*      - Added renderer interface.
+*
+*      - Added scroll support.
+*
+*      - Added read-only state access.
+*
+*
+*
+* Architecture result:
+*
+*
+*
+*              button_app
+*                   |
+*                   v
+*                menu.c
+*                   |
+*          +--------+--------+
+*          |                 |
+*          v                 v
+*
+*      menu_data.c     menu_renderer.c
+*
+*
+*
+******************************************************************************/

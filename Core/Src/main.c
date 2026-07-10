@@ -46,9 +46,10 @@
 #include "buzzer.h"
 #include "buttons.h"
 #include "button_app.h"
-#include "menu.h"
-#include "menu_renderer.h"
 #include "lcd_i2c.h"
+#include "menu_integration.h"
+#include "menu_controller_adapter.h"
+
 
 
 /* USER CODE END Includes */
@@ -174,14 +175,31 @@ int main(void)
      * Menu must be initialized before the renderer,
      * because the renderer reads the current menu state.
      */
-    Menu_Init();
 
-    MenuRenderer_Init();
+
 
     /*
-     * Draw the initial menu immediately.
+     * Initialize complete menu framework.
+     *
+     * This initializes:
+     *
+     *      - Menu Engine
+     *      - Menu Controller
+     *      - Menu Renderer
+     *
      */
-    MenuRenderer_Update();
+    MenuIntegration_Init();
+
+
+
+    /*
+     * Initialize button to menu adapter.
+     *
+     * Connects existing Button App
+     * to new menu architecture.
+     */
+    MenuControllerAdapter_Init();
+
 
     /*
      * Startup delay.
@@ -268,9 +286,14 @@ int main(void)
          */
         if(ButtonApp_GetCommand(&command))
         {
-            Menu_ProcessCommand(command);
+            MenuControllerAdapter_Process(command);
         }
-        MenuRenderer_Update();
+
+
+        /*
+         * Execute menu state machine.
+         */
+        MenuIntegration_Process();
 
     }
     /* USER CODE END WHILE */
