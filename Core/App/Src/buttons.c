@@ -1,41 +1,82 @@
 /******************************************************************************
  * @file    buttons.c
- * @brief   Professional Button Driver Implementation
+ * @brief   پیاده‌سازی درایور کلیدهای فشاری (Push Button Driver)
  *-----------------------------------------------------------------------------
  * Project :
  *      Dual Voltage Monitor
  *
- * Description :
- *      This file implements the button driver module.
+ *-----------------------------------------------------------------------------
+ * معرفی ماژول
+ *-----------------------------------------------------------------------------
  *
- *      The driver is responsible for:
+ * این فایل پیاده‌سازی کامل Driver کلیدهای فشاری پروژه را در اختیار قرار
+ * می‌دهد.
  *
- *          - Reading button hardware
- *          - Software debounce processing
- *          - Button state management
- *          - Event generation
- *          - Event buffering
- *
- *      Application modules must never access button GPIO directly.
- *      They receive button actions through the public API defined in
- *      buttons.h.
+ * این Driver تنها بخش نرم‌افزار است که مجاز به دسترسی مستقیم به پایه‌های
+ * GPIO مربوط به کلیدها می‌باشد. سایر قسمت‌های برنامه هرگز نباید وضعیت
+ * پایه‌های سخت‌افزاری را مستقیماً بخوانند و تنها باید از API عمومی تعریف
+ * شده در buttons.h استفاده نمایند.
  *
  *-----------------------------------------------------------------------------
- * Design:
+ * وظایف Driver
+ *-----------------------------------------------------------------------------
  *
- *      GPIO Input
- *          |
- *          v
- *      Button State Machine
- *          |
- *          v
- *      Event Generator
- *          |
- *          v
- *      Event Queue
- *          |
- *          v
- *      Application
+ *  • خواندن وضعیت واقعی پایه‌های سخت‌افزاری
+ *
+ *  • حذف نویز مکانیکی کلیدها (Software Debounce)
+ *
+ *  • اجرای ماشین حالت (State Machine) مستقل برای هر کلید
+ *
+ *  • تشخیص رویدادهای مختلف:
+ *
+ *          - Press
+ *          - Release
+ *          - Long Press
+ *          - Auto Repeat
+ *
+ *  • ذخیره‌سازی رویدادها در صف داخلی (FIFO)
+ *
+ *  • تحویل رویدادها به لایه Application
+ *
+ *-----------------------------------------------------------------------------
+ * معماری Driver
+ *-----------------------------------------------------------------------------
+ *
+ *          GPIO Hardware
+ *                │
+ *                ▼
+ *          Button_Read()
+ *                │
+ *                ▼
+ *        Button State Machine
+ *                │
+ *                ▼
+ *         Event Generator
+ *                │
+ *                ▼
+ *           Internal FIFO
+ *                │
+ *                ▼
+ *      Buttons_GetEvent()
+ *                │
+ *                ▼
+ *           Application
+ *
+ *-----------------------------------------------------------------------------
+ * فلسفه طراحی
+ *-----------------------------------------------------------------------------
+ *
+ * به علت وجود نویز مکانیکی (Contact Bounce)، وضعیت کلید پس از فشرده شدن
+ * یا رها شدن برای مدت کوتاهی ناپایدار است.
+ *
+ * این Driver با استفاده از ماشین حالت و زمان Debounce تنها زمانی رویداد
+ * تولید می‌کند که وضعیت کلید برای مدت مشخصی پایدار باقی مانده باشد.
+ *
+ * به همین دلیل:
+ *
+ *      • رویدادهای تکراری تولید نمی‌شوند.
+ *      • Application از سخت‌افزار مستقل می‌شود.
+ *      • تغییر پایه‌های GPIO در آینده بدون تغییر Application امکان‌پذیر است.
  *
  *-----------------------------------------------------------------------------
  * Author :
@@ -46,8 +87,20 @@
  *
  * Created :
  *      2026-07-08
+ *
+ *-----------------------------------------------------------------------------
+ * Change History
+ *-----------------------------------------------------------------------------
+ *
+ * Version 1.0.0
+ *      - Initial Stable Release
+ *      - Independent State Machine
+ *      - Software Debounce
+ *      - Event Queue
+ *      - Long Press Detection
+ *      - Auto Repeat
+ *
  ******************************************************************************/
-
 
 /******************************************************************************
  *                              Include Files
@@ -56,91 +109,202 @@
 #include "buttons.h"
 
 #include "main.h"
+
 #include <string.h>
 
-
-
 /******************************************************************************
- *                         Private Constants
+ *                         Private Configuration
  ******************************************************************************/
 
 /*
- * Button timing parameters.
+ * ============================================================================
+ * تنظیمات داخلی Driver
+ * ============================================================================
  *
- * These values are kept here instead of being written directly inside
- * functions.
+ * تمامی ثابت‌های زمانی Driver در این قسمت متمرکز شده‌اند.
  *
- * This makes the driver easier to tune during testing.
+ * هدف از این کار:
+ *
+ *  1- جلوگیری از استفاده از Magic Number در توابع
+ *
+ *  2- سهولت در تنظیم Driver هنگام تست و کالیبراسیون
+ *
+ *  3- افزایش خوانایی و قابلیت نگهداری کد
+ *
+ * نکته:
+ *
+ * تمام زمان‌ها بر حسب میلی‌ثانیه (ms) تعریف شده‌اند.
+ *
+ * ============================================================================
  */
-
 
 /*
- * Minimum stable time required for a button state transition.
+ * حداقل زمانی که وضعیت کلید باید پایدار باقی بماند
+ * تا تغییر وضعیت معتبر تلقی شود.
  *
- * This prevents mechanical contact bouncing from generating
- * multiple false events.
+ * این زمان برای حذف نویز مکانیکی کلیدها استفاده می‌شود.
  */
-
 #define BUTTON_DEBOUNCE_TIME_MS          30U
 
-
-
 /*
- * Time required to generate a Long Press event.
+ * مدت زمان لازم برای تشخیص رویداد Long Press.
  */
-
 #define BUTTON_LONG_PRESS_TIME_MS       800U
 
-
-
 /*
- * Delay before Auto Repeat starts after Long Press.
+ * تأخیر اولیه قبل از آغاز تولید رویدادهای Auto Repeat.
+ *
+ * در نسخه فعلی مقدار آن برابر زمان Long Press در نظر گرفته شده است.
+ * این تعریف به‌صورت مستقل نگهداری شده تا در نسخه‌های آینده امکان
+ * تنظیم مستقل آن وجود داشته باشد.
  */
-
 #define BUTTON_REPEAT_START_TIME_MS     800U
 
-
-
 /*
- * Period between Auto Repeat events.
+ * فاصله زمانی بین دو رویداد متوالی Auto Repeat.
  */
-
 #define BUTTON_REPEAT_PERIOD_MS         200U
 
-
-
 /*
- * Number of events stored inside the internal FIFO queue.
+ * ظرفیت صف داخلی نگهداری رویدادهای کلید.
+ *
+ * در صورت پر شدن صف، رویداد جدید نادیده گرفته می‌شود تا ترتیب
+ * رویدادهای قبلی حفظ گردد.
  */
-
 #define BUTTON_EVENT_QUEUE_SIZE          16U
-
 
 
 /******************************************************************************
  *                         Private Types
  ******************************************************************************/
 
+/*
+ * ============================================================================
+ * انواع داده‌های داخلی Driver
+ * ============================================================================
+ *
+ * این بخش شامل Type هایی است که فقط داخل همین فایل استفاده می‌شوند.
+ *
+ * این Type ها نباید توسط Application شناخته شوند، زیرا جزئیات داخلی
+ * پیاده‌سازی Driver هستند.
+ *
+ * اصل طراحی:
+ *
+ *      buttons.h
+ *          |
+ *          |  Public Interface
+ *          |
+ *      buttons.c
+ *          |
+ *          |  Private Implementation
+ *          |
+ *      Hardware
+ *
+ * نگهداری Type های داخلی در این فایل باعث می‌شود:
+ *
+ *  - وابستگی سایر ماژول‌ها کاهش یابد.
+ *  - تغییرات داخلی Driver روی کل پروژه اثر نگذارد.
+ *  - معماری نرم‌افزار تمیز باقی بماند.
+ *
+ ******************************************************************************/
 
 /**
  * @brief
- *      Internal button processing state.
+ *      وضعیت داخلی ماشین حالت هر کلید.
  *
- * The application never sees this state.
- * It is only used by the driver state machine.
+ * @details
+ *
+ *      هر کلید در سیستم دارای یک State Machine مستقل است.
+ *
+ *      این State ها فقط برای پردازش داخلی Driver استفاده می‌شوند
+ *      و Application هیچ اطلاعی از آن‌ها ندارد.
+ *
+ *
+ *      نمودار تغییر وضعیت:
+ *
+ *
+ *                 Button Press
+ *
+ *       RELEASED -------------->
+ *
+ *                    DEBOUNCE_PRESS
+ *
+ *
+ *                 Stable Press
+ *
+ *       DEBOUNCE_PRESS -------->
+ *
+ *                    PRESSED
+ *
+ *
+ *                 Long Time
+ *
+ *       PRESSED --------------->
+ *
+ *                    LONG_PRESS
+ *
+ *
+ *                 Button Release
+ *
+ *       PRESSED/LONG_PRESS ---->
+ *
+ *                    DEBOUNCE_RELEASE
+ *
+ *
+ *                 Stable Release
+ *
+ *       DEBOUNCE_RELEASE ------>
+ *
+ *                    RELEASED
+ *
+ *
+ * هدف استفاده از این ماشین حالت:
+ *
+ *      جلوگیری از تولید چندین Event برای یک فشار واقعی کلید.
+ *
  */
-
 typedef enum
 {
+    /*
+     * وضعیت پایدار:
+     *
+     * کلید در حالت رها شده قرار دارد.
+     */
     BUTTON_STATE_RELEASED = 0,
 
+
+    /*
+     * احتمال فشرده شدن کلید تشخیص داده شده است.
+     *
+     * Driver در این مرحله منتظر می‌ماند تا زمان Debounce سپری شود.
+     */
     BUTTON_STATE_DEBOUNCE_PRESS,
 
+
+    /*
+     * کلید به صورت معتبر فشرده شده است.
+     *
+     * در این وضعیت Event مربوط به Press تولید شده است.
+     */
     BUTTON_STATE_PRESSED,
 
+
+    /*
+     * کلید برای مدت کافی نگه داشته شده است.
+     *
+     * در این حالت Event مربوط به Long Press تولید می‌شود.
+     */
     BUTTON_STATE_LONG_PRESS,
 
+
+    /*
+     * احتمال رها شدن کلید وجود دارد.
+     *
+     * Driver برای حذف Bounce هنگام Release منتظر
+     * پایدار شدن وضعیت می‌ماند.
+     */
     BUTTON_STATE_DEBOUNCE_RELEASE
+
 
 } Button_State_t;
 
@@ -148,19 +312,44 @@ typedef enum
 
 /**
  * @brief
- *      Hardware information for each button.
+ *      اطلاعات سخت‌افزاری هر کلید.
  *
- * Logical button IDs are separated from physical GPIO pins.
+ * @details
  *
- * This allows changing hardware wiring without modifying
- * application code.
+ *      این ساختار ارتباط بین شناسه منطقی کلید و سخت‌افزار واقعی
+ *      STM32 را ایجاد می‌کند.
+ *
+ *
+ *      Application با نام منطقی کلیدها کار می‌کند:
+ *
+ *          BUTTON_ID_UP
+ *          BUTTON_ID_DOWN
+ *          BUTTON_ID_ENTER
+ *          BUTTON_ID_BACK
+ *
+ *
+ *      اما این Driver می‌داند هر کلید به کدام GPIO متصل است.
+ *
+ *
+ * مزیت این طراحی:
+ *
+ *      در صورت تغییر سیم‌کشی سخت‌افزار، تنها جدول Mapping تغییر می‌کند
+ *      و هیچ تغییری در منطق برنامه لازم نیست.
+ *
  */
-
 typedef struct
 {
+    /*
+     * پورت GPIO مربوط به کلید.
+     */
     GPIO_TypeDef *port;
 
+
+    /*
+     * شماره پایه GPIO مربوط به کلید.
+     */
     uint16_t pin;
+
 
 } Button_Hardware_t;
 
@@ -168,34 +357,51 @@ typedef struct
 
 /**
  * @brief
- *      Runtime context for each button.
+ *      Context زمان اجرای هر کلید.
  *
- * Every button owns an independent context.
+ * @details
+ *
+ *      هر کلید دارای وضعیت Runtime مستقل است.
+ *
+ *      به همین دلیل چهار کلید پروژه می‌توانند کاملاً مستقل
+ *      از یکدیگر پردازش شوند.
+ *
+ *      اطلاعات ذخیره شده در این ساختار شامل:
+ *
+ *      - وضعیت فعلی State Machine
+ *      - زمان آخرین تغییر وضعیت
+ *      - زمان آخرین Repeat
+ *      - وضعیت ارسال Long Press
+ *
  */
-
 typedef struct
 {
+    /*
+     * وضعیت فعلی ماشین حالت کلید.
+     */
     Button_State_t state;
 
 
     /*
-     * Timestamp of last state change.
+     * زمان ثبت آخرین تغییر وضعیت.
+     *
+     * از HAL_GetTick() برای محاسبه زمان سپری شده استفاده می‌شود.
      */
-
     uint32_t timestamp;
 
 
     /*
-     * Timestamp used for repeat generation.
+     * زمان آخرین ارسال Event مربوط به Auto Repeat.
      */
-
     uint32_t repeat_timestamp;
 
 
     /*
-     * Indicates whether Long Press was already generated.
+     * مشخص می‌کند که آیا Event مربوط به Long Press
+     * قبلاً تولید شده است یا خیر.
+     *
+     * جلوگیری از ارسال چندباره Long Press.
      */
-
     bool long_press_sent;
 
 
@@ -205,76 +411,156 @@ typedef struct
 
 /**
  * @brief
- *      Internal FIFO queue for button events.
+ *      ساختار صف داخلی رویدادهای کلید.
+ *
+ * @details
+ *
+ *      Driver رویدادهای تولید شده را ابتدا در این FIFO ذخیره می‌کند.
+ *
+ *      سپس Application هر زمان که آماده بود، با استفاده از
+ *      Buttons_GetEvent() آن‌ها را دریافت می‌کند.
+ *
+ *
+ *      مزیت استفاده از FIFO:
+ *
+ *          Button Event
+ *                |
+ *                v
+ *          Internal Queue
+ *                |
+ *                v
+ *          Application
+ *
+ *
+ *      در نتیجه اگر Application برای مدت کوتاهی مشغول پردازش دیگری باشد،
+ *      Event کلید از بین نخواهد رفت.
+ *
  */
-
 typedef struct
 {
+    /*
+     * آرایه نگهداری Event ها.
+     */
     Button_Event_t buffer[BUTTON_EVENT_QUEUE_SIZE];
 
 
+    /*
+     * محل قرارگیری Event جدید.
+     */
     uint8_t head;
 
 
+    /*
+     * محل خواندن قدیمی‌ترین Event.
+     */
     uint8_t tail;
 
 
+    /*
+     * تعداد Event های موجود در صف.
+     */
     uint8_t count;
 
 
 } Button_EventQueue_t;
+
 
 /******************************************************************************
  *                         Private Variables
  ******************************************************************************/
 
 /*
- * Hardware mapping table.
+ * ============================================================================
+ * جدول ارتباط کلید منطقی با سخت‌افزار
+ * ============================================================================
  *
- * The application works with logical button IDs:
+ * در این جدول، نام منطقی هر کلید به پایه واقعی GPIO متصل می‌شود.
+ *
+ * لایه Application فقط با شناسه منطقی کلیدها کار می‌کند:
  *
  *      BUTTON_ID_UP
  *      BUTTON_ID_DOWN
  *      BUTTON_ID_ENTER
  *      BUTTON_ID_BACK
  *
- * This table connects those logical IDs to the physical STM32 GPIO pins.
+ * و هیچ اطلاعی از GPIO مربوط به آن‌ها ندارد.
  *
- * Current hardware configuration:
+ * این جداسازی باعث می‌شود:
  *
- *      UP       -> PB14
- *      DOWN     -> PB13
- *      ENTER    -> PB12
- *      BACK     -> PB15
+ *      تغییر سخت‌افزار
+ *              |
+ *              v
+ *      فقط تغییر این جدول
  *
- * Buttons are configured with internal/external pull-up resistors.
+ * و نیازی به تغییر منطق برنامه نباشد.
  *
- * Therefore:
  *
- *      GPIO_PIN_RESET  = Button Pressed
- *      GPIO_PIN_SET    = Button Released
+ * تنظیمات سخت‌افزاری فعلی پروژه:
+ *
+ *      UP       --> PB14
+ *      DOWN     --> PB13
+ *      ENTER    --> PB12
+ *      BACK     --> PB15
+ *
+ *
+ * وضعیت فعال بودن کلیدها:
+ *
+ *      Active Low
+ *
+ * یعنی:
+ *
+ *      GPIO_PIN_RESET  ---> Button Pressed
+ *
+ *      GPIO_PIN_SET    ---> Button Released
+ *
+ *
+ * علت استفاده از Active Low:
+ *
+ *      در طراحی‌های Embedded معمولاً استفاده از Pull-Up
+ *      باعث ساده‌تر شدن مدار و افزایش پایداری ورودی می‌شود.
+ *
  */
 
 static const Button_Hardware_t button_hardware[BUTTON_ID_COUNT] =
 {
+    /*
+     * ------------------------------------------------------------------------
+     * BUTTON_ID_UP
+     * ------------------------------------------------------------------------
+     */
     {
         .port = GPIOB,
         .pin  = GPIO_PIN_14
     },
 
 
+    /*
+     * ------------------------------------------------------------------------
+     * BUTTON_ID_DOWN
+     * ------------------------------------------------------------------------
+     */
     {
         .port = GPIOB,
         .pin  = GPIO_PIN_13
     },
 
 
+    /*
+     * ------------------------------------------------------------------------
+     * BUTTON_ID_ENTER
+     * ------------------------------------------------------------------------
+     */
     {
         .port = GPIOB,
         .pin  = GPIO_PIN_12
     },
 
 
+    /*
+     * ------------------------------------------------------------------------
+     * BUTTON_ID_BACK
+     * ------------------------------------------------------------------------
+     */
     {
         .port = GPIOB,
         .pin  = GPIO_PIN_15
@@ -284,9 +570,41 @@ static const Button_Hardware_t button_hardware[BUTTON_ID_COUNT] =
 
 
 /*
- * Runtime context of every button.
+ * ============================================================================
+ * Context اجرای کلیدها
+ * ============================================================================
  *
- * Each button has its own independent state machine.
+ * برای هر کلید یک Context مستقل وجود دارد.
+ *
+ * بنابراین:
+ *
+ *      UP
+ *          |
+ *          +--> State + Timing
+ *
+ *      DOWN
+ *          |
+ *          +--> State + Timing
+ *
+ *      ENTER
+ *          |
+ *          +--> State + Timing
+ *
+ *      BACK
+ *          |
+ *          +--> State + Timing
+ *
+ *
+ * هر کلید بدون وابستگی به کلیدهای دیگر پردازش می‌شود.
+ *
+ * این روش نسبت به استفاده از چند متغیر جداگانه:
+ *
+ *      up_state
+ *      down_state
+ *      enter_state
+ *
+ * خواناتر، قابل توسعه‌تر و خطایابی آن ساده‌تر است.
+ *
  */
 
 static Button_Context_t button_context[BUTTON_ID_COUNT];
@@ -294,9 +612,41 @@ static Button_Context_t button_context[BUTTON_ID_COUNT];
 
 
 /*
- * Internal event FIFO queue.
+ * ============================================================================
+ * صف داخلی Event ها
+ * ============================================================================
  *
- * Button events are stored here until the application reads them.
+ * تمام رویدادهای تولید شده توسط Driver ابتدا وارد این صف می‌شوند.
+ *
+ * جریان اطلاعات:
+ *
+ *
+ *      Physical Button
+ *
+ *             |
+ *             v
+ *
+ *      State Machine
+ *
+ *             |
+ *             v
+ *
+ *      Button Event
+ *
+ *             |
+ *             v
+ *
+ *      FIFO Queue
+ *
+ *             |
+ *             v
+ *
+ *      Application
+ *
+ *
+ * استفاده از FIFO باعث می‌شود زمان اجرای Application
+ * روی تشخیص کلیدها اثر منفی نگذارد.
+ *
  */
 
 static Button_EventQueue_t button_queue;
@@ -307,19 +657,39 @@ static Button_EventQueue_t button_queue;
  *                      Private Function Prototypes
  ******************************************************************************/
 
+/*
+ * ============================================================================
+ * توابع داخلی Driver
+ * ============================================================================
+ *
+ * توابع این بخش فقط داخل همین فایل قابل استفاده هستند.
+ *
+ * استفاده از کلمه کلیدی static باعث می‌شود:
+ *
+ *      - Symbol ها در Linker عمومی نشوند.
+ *      - احتمال تداخل نام با فایل‌های دیگر کاهش یابد.
+ *      - مالکیت تابع مشخص باشد.
+ *
+ ******************************************************************************/
+
 /**
  * @brief
- *      Read current physical button level.
+ *      خواندن وضعیت فیزیکی یک کلید.
  *
  * @param button
- *      Logical button identifier.
+ *      شناسه منطقی کلید.
  *
  * @return
+ *
  *      true:
- *          Button is pressed.
+ *          کلید فشرده شده است.
  *
  *      false:
- *          Button is released.
+ *          کلید رها شده است.
+ *
+ * @note
+ *      این تابع Active Low بودن سخت‌افزار را برای سایر بخش‌های
+ *      Driver پنهان می‌کند.
  */
 static bool Button_Read(Button_Id_t button);
 
@@ -327,10 +697,16 @@ static bool Button_Read(Button_Id_t button);
 
 /**
  * @brief
- *      Process one button state machine.
+ *      اجرای ماشین حالت یک کلید.
  *
  * @param button
- *      Logical button identifier.
+ *      شناسه منطقی کلید.
+ *
+ * @details
+ *      این تابع در هر فراخوانی فقط یک کلید را پردازش می‌کند.
+ *
+ *      از آنجا که هر کلید Context مستقل دارد،
+ *      پردازش کلیدها کاملاً مستقل خواهد بود.
  */
 static void Button_Process(Button_Id_t button);
 
@@ -338,17 +714,18 @@ static void Button_Process(Button_Id_t button);
 
 /**
  * @brief
- *      Add new event to FIFO queue.
+ *      اضافه کردن یک Event به FIFO.
  *
  * @param event
- *      Button event to store.
+ *      Event جدید.
  *
  * @return
+ *
  *      true:
- *          Event stored successfully.
+ *          ذخیره موفق Event.
  *
  *      false:
- *          Queue is full.
+ *          پر بودن Queue.
  */
 static bool Button_QueuePush(Button_Event_t event);
 
@@ -356,17 +733,18 @@ static bool Button_QueuePush(Button_Event_t event);
 
 /**
  * @brief
- *      Remove event from FIFO queue.
+ *      دریافت یک Event از FIFO.
  *
  * @param event
- *      Destination event structure.
+ *      آدرس مقصد برای دریافت Event.
  *
  * @return
+ *
  *      true:
- *          Event received.
+ *          Event دریافت شد.
  *
  *      false:
- *          Queue is empty.
+ *          Queue خالی است.
  */
 static bool Button_QueuePop(Button_Event_t *event);
 
@@ -374,58 +752,133 @@ static bool Button_QueuePop(Button_Event_t *event);
 
 /**
  * @brief
- *      Generate a button event.
+ *      ساخت یک Event جدید و ارسال آن به Queue.
  *
  * @param button
- *      Button identifier.
+ *      کلیدی که Event مربوط به آن تولید شده است.
  *
  * @param event
- *      Event type.
+ *      نوع Event.
  */
 static void Button_GenerateEvent(Button_Id_t button,
                                  Button_EventType_t event);
 
 
-
 /******************************************************************************
  *                         Public Functions
  ******************************************************************************/
-
-/******************************************************************************
- *                         Public Functions
- ******************************************************************************/
-
 
 /**
  * @brief
- *      Initialize button driver.
+ *      مقداردهی اولیه Driver کلیدها.
  *
  * @details
  *
- *      This function initializes all internal button states.
+ *      این تابع قبل از استفاده از سایر API های مربوط به کلیدها
+ *      باید یک بار فراخوانی شود.
  *
- *      GPIO initialization is not performed here.
  *
- *      GPIO pins must already be configured by STM32CubeMX.
+ *      وظایف اصلی این تابع:
  *
- *      Because the hardware uses pull-up configuration:
+ *          1- پاک کردن Context داخلی تمام کلیدها
  *
- *          Released  -> GPIO_SET
- *          Pressed   -> GPIO_RESET
+ *          2- قرار دادن State Machine هر کلید در حالت اولیه
  *
- */
+ *          3- مقداردهی اولیه زمان‌های داخلی
+ *
+ *          4- پاک کردن FIFO Event Queue
+ *
+ *
+ *      نکته مهم:
+ *
+ *          این تابع GPIO را مقداردهی نمی‌کند.
+ *
+ *          تنظیم پایه‌های GPIO باید توسط STM32CubeMX و
+ *          توابع تولید شده HAL انجام شده باشد.
+ *
+ *
+ *      ترتیب معمول راه‌اندازی:
+ *
+ *
+ *          HAL_Init()
+ *
+ *              |
+ *
+ *          System Clock Configuration
+ *
+ *              |
+ *
+ *          MX_GPIO_Init()
+ *
+ *              |
+ *
+ *          Buttons_Init()
+ *
+ *              |
+ *
+ *          Main Loop
+ *
+ *
+ *      مثال:
+ *
+ *          int main(void)
+ *          {
+ *              HAL_Init();
+ *
+ *              SystemClock_Config();
+ *
+ *              MX_GPIO_Init();
+ *
+ *              Buttons_Init();
+ *
+ *              while(1)
+ *              {
+ *                  Buttons_Task();
+ *              }
+ *          }
+ *
+ *
+ *-----------------------------------------------------------------------------
+ *
+ *      وضعیت سخت‌افزاری کلیدها:
+ *
+ *          Pull-Up Configuration
+ *
+ *          Released:
+ *              GPIO_PIN_SET
+ *
+ *          Pressed:
+ *              GPIO_PIN_RESET
+ *
+ ******************************************************************************/
 void Buttons_Init(void)
 {
     uint8_t index;
 
 
-    /*
-     * Clear all button runtime contexts.
-     *
-     * memset is used because the context structure contains
-     * multiple state variables that must start from a known value.
-     */
 
+    /*
+     * ------------------------------------------------------------------------
+     * پاک‌سازی Context کلیدها
+     * ------------------------------------------------------------------------
+     *
+     * ساختار Button_Context_t شامل چندین عضو داخلی است:
+     *
+     *      - State
+     *      - Timestamp
+     *      - Repeat Timestamp
+     *      - Long Press Flag
+     *
+     *
+     * استفاده از memset باعث می‌شود تمام اعضا ابتدا
+     * در یک وضعیت مشخص قرار گیرند.
+     *
+     * این کار نسبت به مقداردهی تک‌تک اعضا:
+     *
+     *      - کوتاه‌تر است.
+     *      - احتمال فراموشی یک عضو جدید در آینده کمتر است.
+     *
+     */
     memset(button_context,
            0,
            sizeof(button_context));
@@ -433,71 +886,142 @@ void Buttons_Init(void)
 
 
     /*
-     * Initialize every button state machine.
+     * ------------------------------------------------------------------------
+     * مقداردهی اولیه State Machine هر کلید
+     * ------------------------------------------------------------------------
+     *
+     * اگرچه memset تمام مقادیر را صفر کرده است،
+     * اما State به صورت صریح مقداردهی می‌شود تا:
+     *
+     *      - هدف کد واضح باشد.
+     *      - ارتباط با ماشین حالت مشخص شود.
+     *      - تغییرات آینده امن‌تر باشد.
+     *
      */
-
     for(index = 0U;
         index < BUTTON_ID_COUNT;
         index++)
     {
-        button_context[index].state = BUTTON_STATE_RELEASED;
+        /*
+         * در شروع، همه کلیدها باید در وضعیت پایدار Released باشند.
+         */
+        button_context[index].state =
+                BUTTON_STATE_RELEASED;
 
-        button_context[index].timestamp = HAL_GetTick();
 
-        button_context[index].repeat_timestamp = 0U;
 
-        button_context[index].long_press_sent = false;
+        /*
+         * ثبت زمان فعلی سیستم.
+         *
+         * HAL_GetTick() یک زمان مرجع برای محاسبات Debounce
+         * و تشخیص Long Press فراهم می‌کند.
+         */
+        button_context[index].timestamp =
+                HAL_GetTick();
+
+
+
+        /*
+         * هنوز هیچ Repeat تولید نشده است.
+         */
+        button_context[index].repeat_timestamp =
+                0U;
+
+
+
+        /*
+         * Event مربوط به Long Press هنوز ارسال نشده است.
+         */
+        button_context[index].long_press_sent =
+                false;
     }
 
 
 
     /*
-     * Initialize event queue.
+     * ------------------------------------------------------------------------
+     * پاک‌سازی FIFO Event Queue
+     * ------------------------------------------------------------------------
+     *
+     * قبل از شروع کار Driver هیچ Event معتبری نباید در صف وجود داشته باشد.
+     *
+     * بنابراین:
+     *
+     *      head  = 0
+     *      tail  = 0
+     *      count = 0
+     *
+     * خواهد شد.
+     *
      */
-
     memset(&button_queue,
            0,
            sizeof(button_queue));
 }
 
-
-
 /**
  * @brief
- *      Execute button processing task.
+ *      اجرای پردازش دوره‌ای Driver کلیدها.
  *
  * @details
  *
- *      This function must be called continuously
- *      from the main loop.
+ *      این تابع باید به صورت پیوسته از حلقه اصلی برنامه
+ *      فراخوانی شود.
  *
- *      Example:
+ *
+ *      نمونه استفاده:
+ *
  *
  *          while(1)
  *          {
  *              Buttons_Task();
+ *
+ *              Application_Task();
  *          }
  *
  *
- *      This function performs:
+ *      در هر فراخوانی، تمام کلیدها به صورت مستقل پردازش می‌شوند.
  *
- *          - Hardware reading
- *          - Debounce processing
- *          - State machine update
- *          - Event generation
  *
- */
+ *      وظایف انجام شده:
+ *
+ *          1- خواندن وضعیت GPIO
+ *
+ *          2- اجرای Debounce
+ *
+ *          3- به‌روزرسانی State Machine
+ *
+ *          4- تولید Event در صورت نیاز
+ *
+ *
+ *      نکته:
+ *
+ *          این Driver بدون استفاده از Interrupt طراحی شده است.
+ *
+ *          روش Polling برای تعداد کم کلیدها:
+ *
+ *              - ساده‌تر است.
+ *              - قابل پیش‌بینی است.
+ *              - Debug آن آسان‌تر است.
+ *
+ ******************************************************************************/
 void Buttons_Task(void)
 {
     uint8_t index;
 
 
-    /*
-     * Process each button independently.
-     *
-     * Each button has its own state machine.
-     */
 
+    /*
+     * ------------------------------------------------------------------------
+     * پردازش مستقل تمام کلیدها
+     * ------------------------------------------------------------------------
+     *
+     * هر کلید Context و State Machine مستقل دارد.
+     *
+     * بنابراین پردازش کلید UP هیچ اثری روی DOWN،
+     * ENTER یا BACK ندارد.
+     *
+     */
     for(index = 0U;
         index < BUTTON_ID_COUNT;
         index++)
@@ -510,27 +1034,65 @@ void Buttons_Task(void)
 
 /**
  * @brief
- *      Get next available button event.
+ *      دریافت اولین Event موجود در صف کلیدها.
  *
  * @param event
- *      Pointer to destination event structure.
+ *      اشاره‌گر به ساختار مقصد Event.
  *
  * @return
  *
  *      true:
- *          Event received successfully.
+ *          یک Event معتبر دریافت شده است.
  *
  *      false:
- *          No event available.
- */
+ *          Event موجود نیست یا ورودی نامعتبر است.
+ *
+ * @details
+ *
+ *      Application نباید وضعیت GPIO را مستقیماً بررسی کند.
+ *
+ *      مسیر صحیح:
+ *
+ *
+ *          Button Hardware
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Button Driver
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Buttons_GetEvent()
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Application
+ *
+ *
+ ******************************************************************************/
 bool Buttons_GetEvent(Button_Event_t *event)
 {
+    /*
+     * بررسی ورودی NULL
+     *
+     * جلوگیری از دسترسی غیرمجاز به حافظه.
+     */
     if(event == NULL)
     {
         return false;
     }
 
 
+
+    /*
+     * دریافت Event از FIFO داخلی.
+     */
     return Button_QueuePop(event);
 }
 
@@ -541,35 +1103,70 @@ bool Buttons_GetEvent(Button_Event_t *event)
  ******************************************************************************/
 
 
+
 /**
  * @brief
- *      Read button hardware state.
+ *      خواندن وضعیت فیزیکی یک کلید.
  *
  * @param button
- *      Logical button identifier.
+ *      شناسه منطقی کلید.
  *
  * @return
  *
  *      true:
- *          Button is physically pressed.
+ *          کلید فشرده شده است.
  *
  *      false:
- *          Button is released.
- */
+ *          کلید رها شده است.
+ *
+ * @details
+ *
+ *      این تابع لایه سخت‌افزار را از منطق Driver جدا می‌کند.
+ *
+ *
+ *      سخت‌افزار:
+ *
+ *          GPIO_PIN_RESET
+ *
+ *                    |
+ *                    v
+ *
+ *              Button Pressed
+ *
+ *
+ *      در اختیار State Machine:
+ *
+ *          true
+ *
+ *
+ *      بنابراین State Machine دیگر لازم نیست
+ *      از Active Low بودن مدار اطلاع داشته باشد.
+ *
+ ******************************************************************************/
 static bool Button_Read(Button_Id_t button)
 {
     GPIO_PinState pin_state;
 
 
-    pin_state = HAL_GPIO_ReadPin(button_hardware[button].port,
-                                 button_hardware[button].pin);
+
+    /*
+     * خواندن وضعیت فعلی پایه GPIO.
+     */
+    pin_state =
+        HAL_GPIO_ReadPin(button_hardware[button].port,
+                         button_hardware[button].pin);
 
 
 
     /*
-     * Buttons are active low because they use pull-up resistors.
+     * کلیدها Active Low هستند.
+     *
+     * یعنی:
+     *
+     *      RESET  = Pressed
+     *      SET    = Released
+     *
      */
-
     if(pin_state == GPIO_PIN_RESET)
     {
         return true;
@@ -582,40 +1179,77 @@ static bool Button_Read(Button_Id_t button)
 
 /**
  * @brief
- *      Process one button state machine.
+ *      پردازش ماشین حالت یک کلید.
  *
  * @param button
- *      Logical button identifier.
+ *      شناسه منطقی کلید.
  *
  * @details
  *
- *      Each button is processed independently.
+ *      این تابع قلب اصلی Driver کلیدها می‌باشد.
  *
- *      State flow:
+ *      در هر بار فراخوانی:
  *
- *          RELEASED
- *              |
- *              | Button Press
- *              v
- *          DEBOUNCE_PRESS
- *              |
- *              | Stable Press
- *              v
- *          PRESSED
- *              |
- *              | Long Time
- *              v
- *          LONG_PRESS
- *              |
- *              | Button Release
- *              v
- *          DEBOUNCE_RELEASE
- *              |
- *              | Stable Release
- *              v
- *          RELEASED
+ *          1- زمان فعلی سیستم خوانده می‌شود.
  *
- */
+ *          2- وضعیت فیزیکی کلید بررسی می‌گردد.
+ *
+ *          3- بر اساس State فعلی، تصمیم‌گیری انجام می‌شود.
+ *
+ *
+ *      هر کلید دارای یک State Machine مستقل است.
+ *
+ *      بنابراین چهار کلید پروژه:
+ *
+ *          UP
+ *          DOWN
+ *          ENTER
+ *          BACK
+ *
+ *      بدون وابستگی به یکدیگر پردازش می‌شوند.
+ *
+ *
+ *-----------------------------------------------------------------------------
+ *
+ *      نمودار کلی State Machine:
+ *
+ *
+ *                         Press
+ *
+ *          RELEASED ------------------>
+ *
+ *                    DEBOUNCE_PRESS
+ *
+ *
+ *                         Stable
+ *
+ *          DEBOUNCE_PRESS ------------>
+ *
+ *                    PRESSED
+ *
+ *
+ *                         Long Time
+ *
+ *          PRESSED ------------------->
+ *
+ *                    LONG_PRESS
+ *
+ *
+ *                         Release
+ *
+ *          PRESSED/LONG_PRESS -------->
+ *
+ *                    DEBOUNCE_RELEASE
+ *
+ *
+ *                         Stable
+ *
+ *          DEBOUNCE_RELEASE ---------->
+ *
+ *                    RELEASED
+ *
+ *
+ ******************************************************************************/
 static void Button_Process(Button_Id_t button)
 {
     uint32_t now;
@@ -624,28 +1258,62 @@ static void Button_Process(Button_Id_t button)
 
 
 
+    /*
+     * دریافت زمان فعلی سیستم.
+     *
+     * HAL_GetTick() یک شمارنده میلی‌ثانیه‌ای است که
+     * توسط HAL مدیریت می‌شود.
+     *
+     * تمام زمان‌های Debounce و Long Press نسبت به
+     * همین مقدار محاسبه می‌شوند.
+     */
     now = HAL_GetTick();
 
 
+
+    /*
+     * تبدیل وضعیت خام GPIO به وضعیت منطقی.
+     *
+     * اینجا دیگر Active Low بودن سخت‌افزار مشخص نیست.
+     *
+     * Button_Read() این جزئیات را مخفی کرده است.
+     */
     pressed = Button_Read(button);
 
 
 
+    /*
+     * تصمیم‌گیری بر اساس وضعیت فعلی State Machine.
+     */
     switch(button_context[button].state)
     {
 
 
+        /**********************************************************************
+         * State:
+         *
+         *      BUTTON_STATE_RELEASED
+         *
+         * توضیح:
+         *
+         *      وضعیت پایدار اولیه.
+         *
+         *      در این حالت کلید آزاد است و Driver
+         *      منتظر فشار جدید می‌ماند.
+         *********************************************************************/
         case BUTTON_STATE_RELEASED:
 
 
             if(pressed)
             {
                 /*
-                 * Possible button press detected.
+                 * احتمال فشار کلید تشخیص داده شد.
                  *
-                 * Start debounce timing.
+                 * هنوز Event تولید نمی‌کنیم، زیرا ممکن است
+                 * این تغییر فقط نویز مکانیکی باشد.
+                 *
+                 * وارد مرحله Debounce می‌شویم.
                  */
-
                 button_context[button].timestamp = now;
 
 
@@ -658,40 +1326,79 @@ static void Button_Process(Button_Id_t button)
 
 
 
+        /**********************************************************************
+         * State:
+         *
+         *      BUTTON_STATE_DEBOUNCE_PRESS
+         *
+         * توضیح:
+         *
+         *      کلید احتمالاً فشرده شده است.
+         *
+         *      Driver منتظر می‌ماند تا مطمئن شود
+         *      این تغییر واقعی است.
+         *********************************************************************/
         case BUTTON_STATE_DEBOUNCE_PRESS:
 
 
             if(!pressed)
             {
                 /*
-                 * Noise detected.
+                 * کلید دوباره آزاد شد.
                  *
-                 * Return to stable released state.
+                 * احتمالاً تغییر قبلی Bounce بوده است.
+                 *
+                 * بنابراین به حالت پایدار Released برمی‌گردیم.
                  */
-
                 button_context[button].state =
                         BUTTON_STATE_RELEASED;
             }
+
+
             else if((now - button_context[button].timestamp)
                     >= BUTTON_DEBOUNCE_TIME_MS)
             {
                 /*
-                 * Button press confirmed.
+                 * کلید برای مدت کافی فشرده باقی مانده است.
+                 *
+                 * بنابراین فشار معتبر تشخیص داده می‌شود.
                  */
 
+
+                /*
+                 * تولید Event فشار کلید.
+                 */
                 Button_GenerateEvent(button,
                                      BUTTON_EVENT_PRESS);
 
 
+
+                /*
+                 * ثبت زمان شروع فشار.
+                 *
+                 * این زمان برای تشخیص Long Press استفاده می‌شود.
+                 */
                 button_context[button].timestamp = now;
 
 
+
+                /*
+                 * شروع زمان‌بندی Auto Repeat.
+                 */
                 button_context[button].repeat_timestamp = now;
 
 
+
+                /*
+                 * هنوز Long Press ارسال نشده است.
+                 */
                 button_context[button].long_press_sent = false;
 
 
+
+                /*
+                 * انتقال به وضعیت Pressed.
+                 */
                 button_context[button].state =
                         BUTTON_STATE_PRESSED;
             }
@@ -701,41 +1408,76 @@ static void Button_Process(Button_Id_t button)
 
 
 
+        /**********************************************************************
+         * State:
+         *
+         *      BUTTON_STATE_PRESSED
+         *
+         * توضیح:
+         *
+         *      کلید به صورت معتبر فشرده شده است.
+         *
+         *      در این وضعیت دو حالت بررسی می‌شود:
+         *
+         *      1- رها شدن کلید
+         *
+         *      2- نگه داشتن طولانی کلید
+         *********************************************************************/
         case BUTTON_STATE_PRESSED:
 
 
             if(!pressed)
             {
                 /*
-                 * Button released before long press.
+                 * کلید قبل از Long Press رها شده است.
+                 *
+                 * وارد Debounce Release می‌شویم.
                  */
-
                 button_context[button].timestamp = now;
 
 
                 button_context[button].state =
                         BUTTON_STATE_DEBOUNCE_RELEASE;
             }
+
+
             else
             {
                 /*
-                 * Check Long Press condition.
+                 * کلید همچنان فشرده است.
+                 *
+                 * اکنون بررسی می‌کنیم آیا زمان Long Press
+                 * سپری شده است یا خیر.
                  */
-
                 if((!button_context[button].long_press_sent) &&
                    ((now - button_context[button].timestamp)
                     >= BUTTON_LONG_PRESS_TIME_MS))
                 {
+                    /*
+                     * Long Press تشخیص داده شد.
+                     */
                     Button_GenerateEvent(button,
                                          BUTTON_EVENT_LONG_PRESS);
 
 
+
+                    /*
+                     * جلوگیری از تولید دوباره Long Press.
+                     */
                     button_context[button].long_press_sent = true;
 
 
+
+                    /*
+                     * شروع زمان‌بندی Repeat از همین لحظه.
+                     */
                     button_context[button].repeat_timestamp = now;
 
 
+
+                    /*
+                     * انتقال به حالت Long Press.
+                     */
                     button_context[button].state =
                             BUTTON_STATE_LONG_PRESS;
                 }
@@ -745,179 +1487,386 @@ static void Button_Process(Button_Id_t button)
             break;
 
 
-
-        case BUTTON_STATE_LONG_PRESS:
-
-
-            if(!pressed)
-            {
-                /*
-                 * Start release debounce.
-                 */
-
-                button_context[button].timestamp = now;
-
-
-                button_context[button].state =
-                        BUTTON_STATE_DEBOUNCE_RELEASE;
-            }
-            else
-            {
-                /*
-                 * Generate Auto Repeat events.
-                 */
-
-                if((now - button_context[button].repeat_timestamp)
-                    >= BUTTON_REPEAT_PERIOD_MS)
-                {
-                    Button_GenerateEvent(button,
-                                         BUTTON_EVENT_REPEAT);
+            /**********************************************************************
+             * State:
+             *
+             *      BUTTON_STATE_LONG_PRESS
+             *
+             * توضیح:
+             *
+             *      کلید برای مدت مشخصی نگه داشته شده است
+             *      و Event مربوط به Long Press قبلاً تولید شده است.
+             *
+             *
+             *      در این حالت:
+             *
+             *          - اگر کلید رها شود:
+             *                وارد Debounce Release می‌شویم.
+             *
+             *          - اگر کلید همچنان نگه داشته شود:
+             *                Event مربوط به Auto Repeat تولید می‌شود.
+             *
+             *********************************************************************/
+                    case BUTTON_STATE_LONG_PRESS:
 
 
-                    button_context[button].repeat_timestamp = now;
+                        if(!pressed)
+                        {
+                            /*
+                             * کلید رها شده است.
+                             *
+                             * مانند Press،
+                             * Release نیز نیاز به Debounce دارد.
+                             */
+                            button_context[button].timestamp = now;
+
+
+                            button_context[button].state =
+                                    BUTTON_STATE_DEBOUNCE_RELEASE;
+                        }
+
+
+                        else
+                        {
+                            /*
+                             * کلید هنوز فشرده است.
+                             *
+                             * بررسی می‌کنیم آیا زمان تولید Repeat
+                             * فرا رسیده است یا خیر.
+                             */
+                            if((now - button_context[button].repeat_timestamp)
+                                >= BUTTON_REPEAT_PERIOD_MS)
+                            {
+                                /*
+                                 * تولید Event تکرار.
+                                 *
+                                 * کاربرد Auto Repeat:
+                                 *
+                                 *      - حرکت سریع در Menu
+                                 *      - افزایش/کاهش مقدار تنظیمات
+                                 *      - Scroll کردن صفحات
+                                 *
+                                 */
+                                Button_GenerateEvent(button,
+                                                     BUTTON_EVENT_REPEAT);
+
+
+
+                                /*
+                                 * ثبت زمان ارسال آخرین Repeat.
+                                 */
+                                button_context[button].repeat_timestamp = now;
+                            }
+                        }
+
+
+                        break;
+
+
+
+            /**********************************************************************
+             * State:
+             *
+             *      BUTTON_STATE_DEBOUNCE_RELEASE
+             *
+             * توضیح:
+             *
+             *      احتمال رها شدن کلید تشخیص داده شده است.
+             *
+             *      اما برای جلوگیری از اثر Bounce،
+             *      باید وضعیت آزاد بودن کلید برای مدت مشخصی
+             *      پایدار بماند.
+             *
+             *********************************************************************/
+                    case BUTTON_STATE_DEBOUNCE_RELEASE:
+
+
+                        if(pressed)
+                        {
+                            /*
+                             * کلید دوباره فشرده شد.
+                             *
+                             * احتمالاً Release قبلی فقط Bounce بوده است.
+                             *
+                             * بنابراین به حالت فشرده برمی‌گردیم.
+                             */
+                            button_context[button].state =
+                                    BUTTON_STATE_PRESSED;
+                        }
+
+
+                        else if((now - button_context[button].timestamp)
+                                >= BUTTON_DEBOUNCE_TIME_MS)
+                        {
+                            /*
+                             * کلید برای مدت کافی آزاد باقی مانده است.
+                             *
+                             * Release معتبر تشخیص داده می‌شود.
+                             */
+                            Button_GenerateEvent(button,
+                                                 BUTTON_EVENT_RELEASE);
+
+
+
+                            /*
+                             * بازگشت به حالت پایدار اولیه.
+                             */
+                            button_context[button].state =
+                                    BUTTON_STATE_RELEASED;
+                        }
+
+
+                        break;
+
+
+
+            /**********************************************************************
+             * حالت پیش‌فرض
+             *
+             * توضیح:
+             *
+             *      این بخش فقط برای افزایش ایمنی نرم‌افزار وجود دارد.
+             *
+             *      اگر به هر دلیل State نامعتبر شود:
+             *
+             *          - خطای حافظه
+             *          - تغییر ناخواسته متغیر
+             *          - خطای نرم‌افزاری
+             *
+             *      Driver خود را به حالت امن برمی‌گرداند.
+             *
+             *********************************************************************/
+                    default:
+
+
+                        /*
+                         * Recovery به وضعیت اولیه.
+                         */
+                        button_context[button].state =
+                                BUTTON_STATE_RELEASED;
+
+
+                        break;
                 }
             }
 
 
-            break;
-
-
-
-        case BUTTON_STATE_DEBOUNCE_RELEASE:
-
-
-            if(pressed)
-            {
-                /*
-                 * False release caused by bouncing.
-                 */
-
-                button_context[button].state =
-                        BUTTON_STATE_PRESSED;
-            }
-            else if((now - button_context[button].timestamp)
-                    >= BUTTON_DEBOUNCE_TIME_MS)
-            {
-                /*
-                 * Release confirmed.
-                 */
-
-                Button_GenerateEvent(button,
-                                     BUTTON_EVENT_RELEASE);
-
-
-                button_context[button].state =
-                        BUTTON_STATE_RELEASED;
-            }
-
-
-            break;
-
-
-
-        default:
-
-
-            /*
-             * Safety recovery.
-             */
-
-            button_context[button].state =
-                    BUTTON_STATE_RELEASED;
-
-
-            break;
-    }
-}
-
-
-
 /**
  * @brief
- *      Generate and store a button event.
+ *      ایجاد یک Event مربوط به کلید و ارسال آن به FIFO.
  *
  * @param button
- *      Button identifier.
+ *      شناسه منطقی کلیدی که Event مربوط به آن تولید شده است.
  *
  * @param event
- *      Event type.
- */
+ *      نوع Event تولید شده.
+ *
+ * @details
+ *
+ *      این تابع مسئول ساخت Event است.
+ *
+ *      نکته مهم:
+ *
+ *          این تابع مسئول نگهداری Event نیست.
+ *
+ *          ذخیره‌سازی توسط FIFO Queue انجام می‌شود.
+ *
+ *
+ *      جداسازی این دو مسئولیت باعث می‌شود:
+ *
+ *          - State Machine ساده‌تر باقی بماند.
+ *
+ *          - Queue مستقل از منطق کلید باشد.
+ *
+ *          - در آینده امکان تغییر روش ذخیره‌سازی وجود داشته باشد.
+ *
+ *
+ *      جریان اطلاعات:
+ *
+ *
+ *          Button Press
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Button_Process()
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Button_GenerateEvent()
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Button_QueuePush()
+ *
+ *                |
+ *
+ *                v
+ *
+ *          Buttons_GetEvent()
+ *
+ *
+ ******************************************************************************/
 static void Button_GenerateEvent(Button_Id_t button,
                                  Button_EventType_t event)
 {
     Button_Event_t new_event;
 
 
+
+    /*
+     * ------------------------------------------------------------------------
+     * ایجاد ساختار Event جدید
+     * ------------------------------------------------------------------------
+     *
+     * ساختار Event شامل:
+     *
+     *      - شناسه کلید
+     *      - نوع رویداد
+     *
+     * می‌باشد.
+     *
+     * این اطلاعات برای Application کافی است تا تصمیم مناسب
+     * را اتخاذ کند.
+     *
+     */
     new_event.button = button;
 
     new_event.event = event;
 
 
+
+    /*
+     * ------------------------------------------------------------------------
+     * ارسال Event به FIFO
+     * ------------------------------------------------------------------------
+     *
+     * Queue مسئول مدیریت فضای ذخیره‌سازی است.
+     *
+     * در صورت پر بودن Queue،
+     * Event جدید ذخیره نخواهد شد.
+     *
+     *
+     * در نسخه فعلی، نتیجه بازگشتی نادیده گرفته می‌شود،
+     * زیرا رفتار اصلی Version 1.0.0 حفظ شده است.
+     *
+     * در نسخه‌های آینده می‌توان:
+     *
+     *      - شمارنده Overflow اضافه کرد.
+     *
+     *      - Event از دست رفته را گزارش نمود.
+     *
+     */
     Button_QueuePush(new_event);
 }
 
 /**
  * @brief
- *      Add event into button FIFO queue.
+ *      قرار دادن یک Event جدید در FIFO Queue.
  *
  * @param event
- *      Button event to store.
+ *      Event جدیدی که باید ذخیره شود.
  *
  * @return
  *
  *      true:
- *          Event stored successfully.
+ *          Event با موفقیت ذخیره شد.
  *
  *      false:
- *          Queue is full.
+ *          فضای کافی در Queue وجود ندارد.
  *
  * @details
  *
- *      The queue prevents losing button events when the application
- *      cannot process them immediately.
+ *      این Queue به صورت Circular Buffer پیاده‌سازی شده است.
  *
- *      Example:
  *
- *          Button pressed
- *                |
- *                v
- *          Event Queue
- *                |
- *                v
- *          Application reads event later
+ *      ساختار کلی:
  *
- */
+ *
+ *          +--------------------------------+
+ *          | Event | Event | Event | Empty |
+ *          +--------------------------------+
+ *              ^
+ *              |
+ *             tail
+ *
+ *                    ^
+ *                    |
+ *                   head
+ *
+ *
+ *      head:
+ *
+ *          محل قرار گرفتن Event جدید.
+ *
+ *
+ *      tail:
+ *
+ *          محل خواندن قدیمی‌ترین Event.
+ *
+ *
+ *      count:
+ *
+ *          تعداد Event های موجود در صف.
+ *
+ *
+ *      استفاده از Circular Buffer باعث می‌شود:
+ *
+ *          - هیچ جابجایی حافظه‌ای انجام نشود.
+ *          - زمان اجرای تابع ثابت باشد.
+ *          - مناسب سیستم‌های Real-Time باشد.
+ *
+ ******************************************************************************/
 static bool Button_QueuePush(Button_Event_t event)
 {
+    /*
+     * بررسی پر بودن Queue.
+     *
+     * اگر تعداد Event ها به ظرفیت برسد،
+     * Event جدید حذف می‌شود.
+     *
+     * این تصمیم باعث حفظ Event های قدیمی‌تر می‌شود.
+     */
     if(button_queue.count >= BUTTON_EVENT_QUEUE_SIZE)
     {
         /*
-         * Queue overflow.
+         * Queue Overflow
          *
-         * The oldest events are preserved.
-         * New event is discarded.
+         * در نسخه فعلی:
+         *
+         *      Event جدید کنار گذاشته می‌شود.
+         *
+         * دلیل:
+         *
+         *      حفظ ترتیب رویدادهای قبلی اهمیت بیشتری دارد.
+         *
          */
-
         return false;
     }
 
 
 
     /*
-     * Store new event at current head position.
+     * قرار دادن Event جدید در محل فعلی Head.
      */
-
     button_queue.buffer[button_queue.head] = event;
 
 
 
     /*
-     * Move head index forward.
+     * افزایش Head.
      *
-     * Circular buffer operation.
+     * چون Queue حلقوی است،
+     * بعد از رسیدن به انتهای آرایه دوباره
+     * به خانه صفر برمی‌گردیم.
      */
-
     button_queue.head++;
+
 
 
     if(button_queue.head >= BUTTON_EVENT_QUEUE_SIZE)
@@ -927,6 +1876,9 @@ static bool Button_QueuePush(Button_Event_t event)
 
 
 
+    /*
+     * افزایش تعداد Event های موجود.
+     */
     button_queue.count++;
 
 
@@ -934,27 +1886,82 @@ static bool Button_QueuePush(Button_Event_t event)
     return true;
 }
 
-
-
-
-
 /**
  * @brief
- *      Remove event from button FIFO queue.
+ *      دریافت قدیمی‌ترین Event موجود از FIFO Queue.
  *
  * @param event
- *      Destination event structure.
+ *      اشاره‌گر به ساختار مقصد برای دریافت Event.
  *
  * @return
  *
  *      true:
- *          Event successfully received.
+ *          Event با موفقیت دریافت شد.
  *
  *      false:
- *          Queue is empty.
- */
+ *          Queue خالی است یا ورودی نامعتبر است.
+ *
+ * @details
+ *
+ *      این تابع آخرین مرحله در مسیر دریافت Event است.
+ *
+ *
+ *      مسیر کامل:
+ *
+ *
+ *          GPIO
+ *
+ *            |
+ *
+ *            v
+ *
+ *       Button_Process()
+ *
+ *            |
+ *
+ *            v
+ *
+ *       Button_GenerateEvent()
+ *
+ *            |
+ *
+ *            v
+ *
+ *       Button_QueuePush()
+ *
+ *            |
+ *
+ *            v
+ *
+ *       Button_QueuePop()
+ *
+ *            |
+ *
+ *            v
+ *
+ *       Application
+ *
+ *
+ *      Event ها به ترتیب ورود دریافت می‌شوند.
+ *
+ *      یعنی FIFO:
+ *
+ *          First In
+ *
+ *              |
+ *
+ *              v
+ *
+ *          First Out
+ *
+ ******************************************************************************/
 static bool Button_QueuePop(Button_Event_t *event)
 {
+    /*
+     * بررسی معتبر بودن اشاره‌گر ورودی.
+     *
+     * جلوگیری از دسترسی به آدرس نامعتبر حافظه.
+     */
     if(event == NULL)
     {
         return false;
@@ -962,6 +1969,12 @@ static bool Button_QueuePop(Button_Event_t *event)
 
 
 
+    /*
+     * بررسی خالی بودن Queue.
+     *
+     * اگر هیچ Event موجود نباشد،
+     * چیزی برای دریافت وجود ندارد.
+     */
     if(button_queue.count == 0U)
     {
         return false;
@@ -970,18 +1983,22 @@ static bool Button_QueuePop(Button_Event_t *event)
 
 
     /*
-     * Read oldest event.
+     * خواندن قدیمی‌ترین Event.
+     *
+     * tail همیشه به اولین Event پردازش نشده اشاره می‌کند.
      */
-
     *event = button_queue.buffer[button_queue.tail];
 
 
 
     /*
-     * Move tail index forward.
+     * حرکت Tail به Event بعدی.
+     *
+     * همانند Head، این مقدار نیز در Queue حلقوی
+     * باید پس از انتهای آرایه به صفر بازگردد.
      */
-
     button_queue.tail++;
+
 
 
     if(button_queue.tail >= BUTTON_EVENT_QUEUE_SIZE)
@@ -991,6 +2008,9 @@ static bool Button_QueuePop(Button_Event_t *event)
 
 
 
+    /*
+     * کاهش تعداد Event های موجود در صف.
+     */
     button_queue.count--;
 
 
@@ -1001,5 +2021,5 @@ static bool Button_QueuePop(Button_Event_t *event)
 
 
 /******************************************************************************
- *                              End of File
+ *                              End Of File
  ******************************************************************************/

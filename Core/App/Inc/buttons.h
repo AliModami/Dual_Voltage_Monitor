@@ -1,213 +1,253 @@
-/******************************************************************************
- * @file    buttons.h
- * @brief   Professional Button Driver Public Interface
- *-----------------------------------------------------------------------------
- * Project :
- *      Dual Voltage Monitor
+/**
+ ******************************************************************************
+ * @file       buttons.h
+ * @brief      درایور دکمه‌های فشاری با Debounce و Event Queue
  *
- * Framework :
- *      Embedded Application Framework
+ * @details
+ *   این هدر فایل رابط عمومی (Public API) درایور دکمه‌ها را تعریف می‌کند.
+ *   تمام ماژول‌های برنامه باید از طریق همین API با دکمه‌ها کار کنند
+ *   و هیچ‌وقت مستقیماً GPIO نخوانند.
  *
- * Description :
- *      This module provides a hardware-independent interface for managing
- *      push buttons.
+ * ─────────────────────────────────────────────────────────────────────────
+ * @hardware   اتصال سخت‌افزاری
+ * ─────────────────────────────────────────────────────────────────────────
  *
- *      The application never accesses GPIO directly.
+ *   Blue Pill         دکمه
+ *   ────────          ──────────────────────
+ *   PB12       ←      ENTER   (Pull-Up خارجی یا داخلی)
+ *   PB13       ←      DOWN
+ *   PB14       ←      UP
+ *   PB15       ←      BACK
+ *   GND        ←      طرف دیگر همه دکمه‌ها
  *
- *      Instead, this module:
+ *   چون Pull-Up داریم:
+ *       دکمه رها = GPIO_PIN_SET   (HIGH = 3.3V)
+ *       دکمه فشار = GPIO_PIN_RESET (LOW  = 0V)
  *
- *          • Reads hardware buttons
- *          • Performs software debounce
- *          • Detects Press
- *          • Detects Release
- *          • Detects Long Press
- *          • Detects Auto Repeat
- *          • Generates Button Events
+ * ─────────────────────────────────────────────────────────────────────────
+ * @cubemx     تنظیم در CubeMX
+ * ─────────────────────────────────────────────────────────────────────────
  *
- *      This design completely separates hardware from application logic.
+ *   PB12, PB13, PB14, PB15:
+ *       Mode       : GPIO_Input
+ *       Pull       : Pull-up   ← اگر مقاومت خارجی نداری
+ *       User Label : BTN_ENTER, BTN_DOWN, BTN_UP, BTN_BACK
  *
- *-----------------------------------------------------------------------------
- * Design Rules
- *-----------------------------------------------------------------------------
+ * ─────────────────────────────────────────────────────────────────────────
+ * @api        فهرست توابع قابل استفاده
+ * ─────────────────────────────────────────────────────────────────────────
  *
- *  1. Never access button GPIO outside this module.
+ *   [راه‌اندازی — یک‌بار در USER CODE BEGIN 2]
  *
- *  2. All button processing is performed inside Buttons_Task().
+ *   Buttons_Init()
+ *       → همه state machine ها و صف رویداد را مقداردهی اولیه می‌کند
+ *       → GPIO را تغییر نمی‌دهد (CubeMX این کار را کرده)
  *
- *  3. Application receives Events only.
+ *   ────────────────────────────────────────────────────────────────────
  *
- *  4. Driver implementation details remain private.
+ *   [پردازش — هر دور در USER CODE BEGIN 3]
  *
- *  5. This module is completely reusable in future projects.
+ *   Buttons_Task()
+ *       → باید در هر دور حلقه while(1) فراخوانی شود
+ *       → GPIO می‌خواند، debounce می‌کند، رویداد تولید می‌کند
+ *       → مثال:
+ *             while(1) {
+ *                 Buttons_Task();      ← هر دور
+ *                 Menu_Task();
+ *             }
  *
- *-----------------------------------------------------------------------------
- * Author :
- *      Ali Modami & ChatGPT
+ *   ────────────────────────────────────────────────────────────────────
  *
- * Version :
- *      1.0.0
+ *   [دریافت رویداد]
  *
- * Created :
- *      2026-07-08
+ *   Buttons_GetEvent(Button_Event_t *event)
+ *       → یک رویداد از صف خارج می‌کند
+ *       → اگر رویدادی باشد true برمی‌گرداند
+ *       → مثال:
+ *             Button_Event_t ev;
+ *             if (Buttons_GetEvent(&ev)) {
+ *                 if (ev.button == BUTTON_ID_UP &&
+ *                     ev.event  == BUTTON_EVENT_PRESS) {
+ *                     // دکمه UP فشار داده شد
+ *                 }
+ *             }
  *
- ******************************************************************************/
+ *   Buttons_Flush()
+ *       → همه رویدادهای موجود در صف را پاک می‌کند
+ *       → مفید هنگام تغییر صفحه منو
+ *
+ *   Buttons_IsPressed(Button_Id_t button)
+ *       → وضعیت لحظه‌ای دکمه را برمی‌گرداند (بدون debounce)
+ *       → فقط برای بررسی سریع — برای منو از GetEvent استفاده کن
+ *       → مثال:
+ *             if (Buttons_IsPressed(BUTTON_ID_ENTER)) { ... }
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * @events     انواع رویدادها
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ *   BUTTON_EVENT_PRESS        دکمه فشار داده شد (لبه نزولی — یک‌بار)
+ *   BUTTON_EVENT_RELEASE      دکمه رها شد       (لبه صعودی — یک‌بار)
+ *   BUTTON_EVENT_LONG_PRESS   فشار طولانی        (بعد از 800ms — یک‌بار)
+ *   BUTTON_EVENT_REPEAT       تکرار خودکار       (هر 200ms در long press)
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * @example    مثال کامل استفاده در منو
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ *   // USER CODE BEGIN 2
+ *   Buttons_Init();
+ *
+ *   // USER CODE BEGIN 3  (داخل while(1))
+ *   Buttons_Task();
+ *
+ *   Button_Event_t ev;
+ *   if (Buttons_GetEvent(&ev))
+ *   {
+ *       switch (ev.button)
+ *       {
+ *           case BUTTON_ID_UP:
+ *               if (ev.event == BUTTON_EVENT_PRESS ||
+ *                   ev.event == BUTTON_EVENT_REPEAT)
+ *                   Menu_NavigateUp();
+ *               break;
+ *
+ *           case BUTTON_ID_DOWN:
+ *               if (ev.event == BUTTON_EVENT_PRESS ||
+ *                   ev.event == BUTTON_EVENT_REPEAT)
+ *                   Menu_NavigateDown();
+ *               break;
+ *
+ *           case BUTTON_ID_ENTER:
+ *               if (ev.event == BUTTON_EVENT_PRESS)
+ *                   Menu_Enter();
+ *               break;
+ *
+ *           case BUTTON_ID_BACK:
+ *               if (ev.event == BUTTON_EVENT_PRESS)
+ *                   Menu_Back();
+ *               break;
+ *       }
+ *   }
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * @version    1.1.0
+ * @date       2025
+ * @note       نیاز به stm32f1xx_hal.h و stdbool.h دارد
+ ******************************************************************************
+ */
 
+/* جلوگیری از include شدن چندباره */
 #ifndef BUTTONS_H
 #define BUTTONS_H
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
+/* ──────────────────────────────────────────────────────────────────────────
+ * وابستگی‌ها
+ * ────────────────────────────────────────────────────────────────────────── */
+#include "stm32f1xx_hal.h"  /* برای GPIO و HAL_GetTick */
+#include <stdbool.h>         /* برای bool، true، false */
+#include <stdint.h>          /* برای uint8_t، uint32_t */
 
-/******************************************************************************
- *                              Include Files
- ******************************************************************************/
-
-#include <stdbool.h>
-#include <stdint.h>
-
-/******************************************************************************
- *                              Button IDs
- ******************************************************************************/
-
-/*
- * Logical identifiers for every button in the system.
+/* ──────────────────────────────────────────────────────────────────────────
+ * تنظیمات سخت‌افزاری — اینجا پایه‌ها را تغییر بده
  *
- * NOTE:
- * These IDs are independent from GPIO numbers.
- */
+ * اگر پایه‌های متفاوتی داری، فقط همین بخش را عوض کن.
+ * بقیه کد نیازی به تغییر ندارد.
+ * ────────────────────────────────────────────────────────────────────────── */
+#define BTN_UP_PORT        GPIOB
+#define BTN_UP_PIN         GPIO_PIN_14
 
+#define BTN_DOWN_PORT      GPIOB
+#define BTN_DOWN_PIN       GPIO_PIN_13
+
+#define BTN_ENTER_PORT     GPIOB
+#define BTN_ENTER_PIN      GPIO_PIN_12
+
+#define BTN_BACK_PORT      GPIOB
+#define BTN_BACK_PIN       GPIO_PIN_15
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * تنظیمات زمان‌بندی — اینجا رفتار دکمه‌ها را تنظیم کن
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** حداقل زمان پایدار برای تأیید فشار (میلی‌ثانیه) — ضد باونس */
+#define BTN_DEBOUNCE_MS         30U
+
+/** مدت نگه‌داشتن برای تشخیص Long Press (میلی‌ثانیه) */
+#define BTN_LONG_PRESS_MS      800U
+
+/** تأخیر قبل از شروع تکرار خودکار (میلی‌ثانیه) */
+#define BTN_REPEAT_START_MS    800U
+
+/** فاصله بین رویدادهای تکرار خودکار (میلی‌ثانیه) */
+#define BTN_REPEAT_PERIOD_MS   200U
+
+/** حداکثر تعداد رویداد در صف FIFO */
+#define BTN_QUEUE_SIZE          16U
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * شناسه دکمه‌ها (Button ID)
+ *
+ * از این enum در کدت استفاده کن — نه از عدد مستقیم.
+ * مثال: ev.button == BUTTON_ID_UP
+ * ────────────────────────────────────────────────────────────────────────── */
 typedef enum
 {
-    BUTTON_ID_UP = 0,
+    BUTTON_ID_UP    = 0,  /* دکمه بالا   — پیمایش به بالا در منو */
+    BUTTON_ID_DOWN  = 1,  /* دکمه پایین  — پیمایش به پایین در منو */
+    BUTTON_ID_ENTER = 2,  /* دکمه انتخاب — ورود به زیرمنو یا تأیید */
+    BUTTON_ID_BACK  = 3,  /* دکمه برگشت  — خروج از زیرمنو */
 
-    BUTTON_ID_DOWN,
-
-    BUTTON_ID_ENTER,
-
-    BUTTON_ID_BACK,
-
-    BUTTON_ID_COUNT
-
+    BUTTON_ID_COUNT = 4   /* تعداد کل دکمه‌ها — برای حلقه‌ها استفاده می‌شود */
 } Button_Id_t;
 
-/******************************************************************************
- *                              Button Events
- ******************************************************************************/
-
-/*
- * Button events generated by the driver.
+/* ──────────────────────────────────────────────────────────────────────────
+ * انواع رویداد دکمه (Button Event Type)
  *
- * The application only works with these events.
- *
- * Example:
- *
- *      Button = BUTTON_ID_UP
- *      Event  = BUTTON_EVENT_PRESS
- */
-
+ * هر فشار دکمه می‌تواند چند نوع رویداد تولید کند.
+ * ────────────────────────────────────────────────────────────────────────── */
 typedef enum
 {
-    BUTTON_EVENT_NONE = 0,
-
-    /*
-     * Button has been pressed.
-     */
-
-    BUTTON_EVENT_PRESS,
-
-    /*
-     * Button has been released.
-     */
-
-    BUTTON_EVENT_RELEASE,
-
-    /*
-     * Button has been held long enough
-     * to generate a Long Press event.
-     */
-
-    BUTTON_EVENT_LONG_PRESS,
-
-    /*
-     * Button Auto Repeat event.
-     */
-
-    BUTTON_EVENT_REPEAT
-
+    BUTTON_EVENT_PRESS      = 0,  /* لحظه فشار — یک‌بار در ابتدا */
+    BUTTON_EVENT_RELEASE    = 1,  /* لحظه رها شدن — یک‌بار */
+    BUTTON_EVENT_LONG_PRESS = 2,  /* نگه‌داشتن طولانی — یک‌بار بعد از 800ms */
+    BUTTON_EVENT_REPEAT     = 3,  /* تکرار خودکار — هر 200ms در long press */
 } Button_EventType_t;
 
-/******************************************************************************
- *                              Button Event
- ******************************************************************************/
-
-/*
- * Complete event returned to the application.
+/* ──────────────────────────────────────────────────────────────────────────
+ * ساختار رویداد دکمه
  *
- * Example:
- *
- *      Button :
- *          BUTTON_ID_UP
- *
- *      Event :
- *          BUTTON_EVENT_PRESS
- */
-
+ * این struct اطلاعات یک رویداد را نگه می‌دارد.
+ * مثال استفاده:
+ *   Button_Event_t ev;
+ *   if (Buttons_GetEvent(&ev)) {
+ *       // ev.button = کدام دکمه؟
+ *       // ev.event  = چه اتفاقی افتاد؟
+ *   }
+ * ────────────────────────────────────────────────────────────────────────── */
 typedef struct
 {
-    Button_Id_t button;
-
-    Button_EventType_t event;
-
+    Button_Id_t        button;  /* کدام دکمه رویداد داشت */
+    Button_EventType_t event;   /* نوع رویداد */
 } Button_Event_t;
 
-/******************************************************************************
- *                      Public Function Prototypes
- ******************************************************************************/
+/* ──────────────────────────────────────────────────────────────────────────
+ * اعلام توابع عمومی (Public API)
+ * ────────────────────────────────────────────────────────────────────────── */
 
-/**
- * @brief Initialize Button Driver.
- *
- * This function initializes all internal driver variables.
- *
- * GPIO configuration is NOT performed here.
- * GPIO must already be initialized by CubeMX.
- */
+/* راه‌اندازی — یک‌بار در USER CODE BEGIN 2 */
 void Buttons_Init(void);
 
-/**
- * @brief Periodic button processing task.
- *
- * This function shall be called continuously
- * from the main loop.
- *
- * It performs:
- *
- *      - GPIO reading
- *      - Debounce
- *      - State machine update
- *      - Event generation
- */
+/* پردازش — هر دور در while(1) */
 void Buttons_Task(void);
 
-/**
- * @brief Get next available button event.
- *
- * @param event
- * Pointer to destination event structure.
- *
- * @return
- * true
- *      New event available.
- *
- * false
- *      No pending events.
- */
+/* دریافت رویداد از صف */
 bool Buttons_GetEvent(Button_Event_t *event);
 
-#ifdef __cplusplus
-}
-#endif
+/* پاک کردن همه رویدادهای صف — هنگام تغییر صفحه */
+void Buttons_Flush(void);
+
+/* خواندن لحظه‌ای وضعیت دکمه — بدون debounce */
+bool Buttons_IsPressed(Button_Id_t button);
 
 #endif /* BUTTONS_H */

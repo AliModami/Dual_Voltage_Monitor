@@ -1,47 +1,83 @@
 /******************************************************************************
  * @file    button_app.c
- * @brief   Button Application Layer Implementation
+ * @brief   پیاده‌سازی لایه کاربردی کلیدهای فشاری (Button Application Layer)
  *-----------------------------------------------------------------------------
  * Project :
  *      Dual Voltage Monitor
  *
- * Description :
- *      This module connects the low level button driver with the
- *      application layer.
+ *-----------------------------------------------------------------------------
+ * شرح ماژول
+ *-----------------------------------------------------------------------------
  *
- *      The button driver generates hardware independent events.
- *      This module converts those events into application commands.
+ *      این فایل لایه واسط بین Driver کلیدها و بخش‌های کاربردی
+ *      نرم‌افزار را پیاده‌سازی می‌کند.
  *
- *      Flow:
+ *      Driver کلیدها فقط مسئول خواندن سخت‌افزار، حذف نویز (Debounce)
+ *      و تولید رویدادهای استاندارد است.
  *
- *          buttons.c
- *              |
- *              v
+ *      این ماژول رویدادهای Driver را دریافت کرده و آن‌ها را
+ *      به فرمان‌هایی تبدیل می‌کند که توسط Menu و سایر بخش‌های
+ *      نرم‌افزار قابل استفاده هستند.
+ *
+ *-----------------------------------------------------------------------------
+ * معماری نرم‌افزار
+ *-----------------------------------------------------------------------------
+ *
+ *              buttons.c
+ *                  │
+ *                  ▼
  *          Button Events
- *              |
- *              v
- *          button_app.c
- *              |
- *              v
- *          Application Commands
+ *                  │
+ *                  ▼
+ *            button_app.c
+ *                  │
+ *                  ▼
+ *      Application Commands
+ *                  │
+ *                  ▼
+ *           Menu / Monitor
+ *
+ *-----------------------------------------------------------------------------
+ * قوانین طراحی
+ *-----------------------------------------------------------------------------
+ *
+ *  1- این فایل هیچ دسترسی مستقیمی به GPIO ندارد.
+ *
+ *  2- هیچگونه Debounce در این فایل انجام نمی‌شود.
+ *
+ *  3- این فایل فقط نقش مترجم (Translator) بین Driver و
+ *     Application را بر عهده دارد.
+ *
+ *  4- این ماژول از جزئیات سخت‌افزار مستقل است.
  *
  *-----------------------------------------------------------------------------
  * Author :
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.0.0
+ *      1.1.0
  *
- * Created :
- *      2026-07-08
+ * Change Log :
+ *
+ *      Version 1.1.0
+ *      ----------------
+ *      - بازنویسی کامل مستندات فارسی
+ *      - بهبود توضیح معماری
+ *      - بدون تغییر منطق برنامه
+ *      - بدون تغییر API
+ *
+ *      Version 1.0.0
+ *      ----------------
+ *      - Initial Release
+ *
  ******************************************************************************/
-
 
 /******************************************************************************
  *                              Include Files
  ******************************************************************************/
 
 #include "button_app.h"
+
 #include <stddef.h>
 
 
@@ -51,51 +87,102 @@
  ******************************************************************************/
 
 /*
- * Latest generated application command.
+ * آخرین فرمان تولید شده برای Application.
  *
- * This variable is private to this module.
+ * این متغیر فقط در همین فایل قابل دسترسی است.
+ *
+ * سایر ماژول‌ها فقط از طریق
+ * ButtonApp_GetCommand()
+ * به آن دسترسی خواهند داشت.
  */
-
 static Button_AppCommand_t current_command =
         BUTTON_CMD_NONE;
 
 
 
 /*
- * Temporary event storage.
+ * محل نگهداری موقت رویداد دریافتی از Driver.
  *
- * Button driver events are received here before
- * being converted into application commands.
+ * هر رویداد ابتدا در این متغیر قرار می‌گیرد،
+ * سپس به فرمان Application تبدیل می‌شود.
  */
-
 static Button_Event_t button_event;
 
 
 
+/******************************************************************************
+ *                      Private Function Prototypes
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      تبدیل رویداد Driver به فرمان Application.
+ *
+ * @param event
+ *      رویداد تولید شده توسط Driver کلیدها.
+ *
+ * @return
+ *      فرمان معادل در سطح Application.
+ *
+ * @details
+ *
+ *      این تابع ارتباط بین Driver و بخش‌های بالاتر
+ *      نرم‌افزار را برقرار می‌کند.
+ *
+ *      به این ترتیب Menu و سایر ماژول‌ها نیازی به
+ *      شناخت Button_Event_t نخواهند داشت.
+ *
+ */
+static Button_AppCommand_t
+ButtonApp_ConvertEvent(Button_Event_t event);
 /******************************************************************************
  *                         Private Functions
  ******************************************************************************/
 
 /**
  * @brief
- *      Convert driver event into application command.
+ *      تبدیل رویداد Driver به فرمان قابل استفاده در Application.
  *
  * @param event
- *      Button driver event.
+ *      رویداد دریافت شده از Driver کلیدها.
  *
  * @return
- *      Application command.
+ *      فرمان متناظر از نوع Button_AppCommand_t.
+ *
+ * @details
+ *
+ *      Driver کلیدها رویدادهایی مانند:
+ *
+ *          - PRESS
+ *          - RELEASE
+ *          - LONG_PRESS
+ *          - REPEAT
+ *
+ *      را تولید می‌کند.
+ *
+ *      اما منو و سایر بخش‌های برنامه نیازی به شناخت این
+ *      جزئیات ندارند.
+ *
+ *      این تابع نقش مترجم بین Driver و Application را
+ *      ایفا می‌کند.
+ *
+ *      در نسخه فعلی پروژه فقط رویداد PRESS به فرمان
+ *      کاربردی تبدیل می‌شود.
+ *
+ *      سایر رویدادها برای توسعه‌های آینده (مانند کنترل
+ *      منو با نگه داشتن کلید یا Auto Repeat) در نظر
+ *      گرفته شده‌اند.
+ *
  */
-static Button_AppCommand_t ButtonApp_ConvertEvent(
-        Button_Event_t event)
+static Button_AppCommand_t
+ButtonApp_ConvertEvent(Button_Event_t event)
 {
     /*
-     * Only press events generate commands.
+     * در نسخه فعلی فقط فشرده شدن کلید
+     * باعث تولید فرمان Application می‌شود.
      *
-     * Release, Long Press and Repeat handling
-     * will be expanded when menu control is added.
+     * سایر رویدادها فعلاً نادیده گرفته می‌شوند.
      */
-
     if(event.event != BUTTON_EVENT_PRESS)
     {
         return BUTTON_CMD_NONE;
@@ -103,33 +190,52 @@ static Button_AppCommand_t ButtonApp_ConvertEvent(
 
 
 
+    /*
+     * تبدیل شناسه کلید به فرمان متناظر.
+     */
     switch(event.button)
     {
 
+        /*
+         * کلید حرکت به بالا.
+         */
         case BUTTON_ID_UP:
 
             return BUTTON_CMD_UP;
 
 
 
+        /*
+         * کلید حرکت به پایین.
+         */
         case BUTTON_ID_DOWN:
 
             return BUTTON_CMD_DOWN;
 
 
 
+        /*
+         * کلید تأیید یا ورود.
+         */
         case BUTTON_ID_ENTER:
 
             return BUTTON_CMD_ENTER;
 
 
 
+        /*
+         * کلید بازگشت.
+         */
         case BUTTON_ID_BACK:
 
             return BUTTON_CMD_BACK;
 
 
 
+        /*
+         * هر شناسه ناشناخته به عنوان
+         * فرمان نامعتبر در نظر گرفته می‌شود.
+         */
         default:
 
             return BUTTON_CMD_NONE;
@@ -141,26 +247,60 @@ static Button_AppCommand_t ButtonApp_ConvertEvent(
 /******************************************************************************
  *                         Public Functions
  ******************************************************************************/
-
-
 /**
  * @brief
- *      Initialize button application layer.
+ *      مقداردهی اولیه لایه Application مربوط به کلیدها.
+ *
+ * @details
+ *
+ *      این تابع وضعیت داخلی ماژول را به حالت اولیه بازمی‌گرداند.
+ *
+ *      در حال حاضر تنها متغیر داخلی این ماژول،
+ *      آخرین فرمان تولید شده برای Application است.
+ *
+ *      این تابع باید یک بار در هنگام راه‌اندازی سیستم
+ *      فراخوانی شود.
+ *
  */
 void ButtonApp_Init(void)
 {
+    /*
+     * در ابتدای اجرای برنامه هیچ فرمانی
+     * برای Application وجود ندارد.
+     */
     current_command = BUTTON_CMD_NONE;
 }
 
 
 
+
+
 /**
  * @brief
- *      Process button events.
+ *      پردازش رویدادهای دریافت شده از Driver کلیدها.
  *
  * @details
- *      This function must be called periodically
- *      from the main loop.
+ *
+ *      این تابع باید به صورت دوره‌ای از حلقه اصلی برنامه
+ *      فراخوانی شود.
+ *
+ *      روند اجرای تابع:
+ *
+ *          1- خواندن تمام Event های موجود در صف Driver
+ *
+ *          2- تبدیل هر Event به فرمان Application
+ *
+ *          3- ذخیره آخرین فرمان معتبر
+ *
+ *
+ *      دلیل استفاده از حلقه while:
+ *
+ *      ممکن است بین دو بار اجرای این تابع،
+ *      چندین رویداد در FIFO مربوط به Driver ذخیره شده باشد.
+ *
+ *      بنابراین باید تمام رویدادهای موجود خوانده شوند
+ *      تا هیچ Eventی از دست نرود.
+ *
  */
 void ButtonApp_Task(void)
 {
@@ -169,16 +309,25 @@ void ButtonApp_Task(void)
 
 
     /*
-     * Read available driver events.
+     * تا زمانی که Driver رویداد جدیدی دارد،
+     * آن‌ها را دریافت و پردازش کن.
      */
-
     while(Buttons_GetEvent(&button_event))
     {
-
+        /*
+         * تبدیل Event به فرمان Application.
+         */
         command = ButtonApp_ConvertEvent(button_event);
 
 
 
+        /*
+         * فقط فرمان‌های معتبر ذخیره می‌شوند.
+         *
+         * اگر BUTTON_CMD_NONE برگردانده شود،
+         * یعنی رویداد فعلی برای Application
+         * اهمیتی ندارد.
+         */
         if(command != BUTTON_CMD_NONE)
         {
             current_command = command;
@@ -188,23 +337,40 @@ void ButtonApp_Task(void)
 
 
 
+
+
 /**
  * @brief
- *      Get latest application command.
+ *      دریافت آخرین فرمان تولید شده.
  *
  * @param command
- *      Destination variable.
+ *      اشاره‌گر به محل ذخیره فرمان.
  *
  * @return
  *
- *      true:
- *          Command available.
+ *      true
+ *          فرمان جدید وجود دارد.
  *
- *      false:
- *          No command available.
+ *      false
+ *          فرمان جدیدی موجود نیست.
+ *
+ * @details
+ *
+ *      این تابع به صورت One-Shot عمل می‌کند.
+ *
+ *      یعنی پس از اینکه فرمان توسط Application
+ *      خوانده شد، از حافظه داخلی پاک می‌شود تا
+ *      مجدداً تکرار نگردد.
+ *
+ *      این رفتار باعث می‌شود هر فرمان فقط یک بار
+ *      مصرف شود.
+ *
  */
 bool ButtonApp_GetCommand(Button_AppCommand_t *command)
 {
+    /*
+     * بررسی معتبر بودن اشاره‌گر ورودی.
+     */
     if(command == NULL)
     {
         return false;
@@ -212,6 +378,10 @@ bool ButtonApp_GetCommand(Button_AppCommand_t *command)
 
 
 
+    /*
+     * اگر فرمان جدیدی وجود ندارد،
+     * چیزی برای بازگرداندن نیست.
+     */
     if(current_command == BUTTON_CMD_NONE)
     {
         return false;
@@ -219,17 +389,28 @@ bool ButtonApp_GetCommand(Button_AppCommand_t *command)
 
 
 
+    /*
+     * انتقال فرمان به Application.
+     */
     *command = current_command;
 
 
 
     /*
-     * Clear command after reading.
+     * پاک کردن فرمان پس از خواندن.
+     *
+     * این کار از تکرار ناخواسته فرمان
+     * در دفعات بعد جلوگیری می‌کند.
      */
-
     current_command = BUTTON_CMD_NONE;
 
 
 
     return true;
 }
+
+
+
+/******************************************************************************
+ *                              End of File
+ ******************************************************************************/

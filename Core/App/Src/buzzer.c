@@ -1,48 +1,111 @@
+
 /******************************************************************************
  * @file    buzzer.c
- * @brief   Buzzer control implementation
+ * @brief   پیاده‌سازی Driver مربوط به Buzzer
  *-----------------------------------------------------------------------------
  * Project :
  *      Dual Voltage Monitor
  *
  * Description :
- *      This file implements a non-blocking buzzer driver.
  *
- *      The buzzer module uses HAL_GetTick() for timing instead of HAL_Delay().
+ *      این فایل منطق داخلی Driver مربوط به Buzzer را پیاده‌سازی می‌کند.
  *
- *      This design allows the CPU to continue executing other tasks while
- *      the buzzer pattern is being generated.
+ *      وظیفه این ماژول ایجاد صداهای مختلف بدون توقف اجرای برنامه است.
  *
- *      Example:
+ *      برخلاف روش‌های ساده که با استفاده از HAL_Delay() باعث توقف CPU
+ *      می‌شوند، این Driver از یک State Machine غیرمسدودکننده استفاده می‌کند.
  *
- *          - LCD refresh can continue
- *          - ADC measurement can continue
- *          - UART communication can continue
+ *
+ *      به این معنی که هنگام اجرای یک الگوی صوتی:
+ *
+ *          - LCD همچنان بروزرسانی می‌شود.
+ *          - ADC همچنان نمونه‌برداری می‌کند.
+ *          - UART همچنان فعال باقی می‌ماند.
+ *          - سایر Task های سیستم متوقف نمی‌شوند.
+ *
  *
  *-----------------------------------------------------------------------------
- * Design:
+ * معماری داخلی:
+ *
  *
  *      Buzzer_SetPattern()
+ *
  *              |
  *              v
- *      Store requested pattern
+ *
+ *      ذخیره درخواست کاربر
+ *
  *              |
  *              v
+ *
  *      Buzzer_Task()
+ *
  *              |
  *              v
- *      Execute state machine using HAL_GetTick()
+ *
+ *      State Machine داخلی
+ *
+ *              |
+ *              v
+ *
+ *      کنترل GPIO
+ *
+ *              |
+ *              v
+ *
+ *      Hardware Buzzer
+ *
+ *
+ *-----------------------------------------------------------------------------
+ * قوانین طراحی:
+ *
+ *      1- فقط این فایل مجاز به دسترسی مستقیم به GPIO مربوط به Buzzer است.
+ *
+ *      2- سایر ماژول‌ها فقط از API موجود در buzzer.h استفاده می‌کنند.
+ *
+ *      3- هیچ Delay مسدودکننده‌ای استفاده نمی‌شود.
+ *
+ *      4- تمام زمان‌بندی‌ها با HAL_GetTick() انجام می‌شوند.
+ *
+ *      5- وضعیت داخلی Driver برای سایر بخش‌های پروژه قابل مشاهده نیست.
+ *
+ *
+ *-----------------------------------------------------------------------------
+ * Hardware:
+ *
+ *      MCU:
+ *          STM32F103C8T6
+ *
+ *
+ *      GPIO:
+ *
+ *          BUZZER_GPIO_Port
+ *          BUZZER_Pin
+ *
+ *
+ *      این نام‌ها توسط STM32CubeMX تولید می‌شوند.
+ *
  *
  *-----------------------------------------------------------------------------
  * Author :
  *      Ali Modami & ChatGPT
  *
  * Version :
- *      1.0.0
+ *      1.1.0
  *
  * Created :
  *      2026-07-08
+ *
+ * Revision History :
+ *
+ *      Version 1.1.0
+ *
+ *          - بازسازی مستندات فایل
+ *          - بهبود توضیحات State Machine
+ *          - حفظ رفتار نسخه پایدار 1.0.0
+ *
  ******************************************************************************/
+
 
 
 /******************************************************************************
@@ -50,65 +113,916 @@
  ******************************************************************************/
 
 #include "buzzer.h"
+
 #include "main.h"
+
 #include <stdbool.h>
+#include <stdint.h>
+
 
 
 
 /******************************************************************************
  *                         Private Constants
+ *
+ * توضیح:
+ *
+ *      این مقادیر فقط مربوط به منطق داخلی Driver هستند.
+ *
+ *      قرار دادن آن‌ها در بخش خصوصی فایل باعث می‌شود:
+ *
+ *          - تغییر زمان‌ها ساده باشد.
+ *          - Header عمومی آلوده نشود.
+ *          - وابستگی سایر ماژول‌ها کاهش پیدا کند.
+ *
  ******************************************************************************/
 
-/*
- * Timing values are defined here instead of being written directly inside
- * functions.
- *
- * This improves readability and allows easy adjustment during testing.
- */
 
+
+/*
+ * مدت زمان روشن بودن صدای کوتاه.
+ *
+ * واحد:
+ *      میلی‌ثانیه
+ *
+ * کاربرد:
+ *      BUZZER_SHORT_BEEP
+ *      و بخش‌هایی از الگوهای ترکیبی
+ */
 #define BUZZER_SHORT_TIME_MS          100U
 
+
+
+
+/*
+ * مدت زمان روشن بودن صدای بلند.
+ *
+ * کاربرد:
+ *      BUZZER_LONG_BEEP
+ */
 #define BUZZER_LONG_TIME_MS           800U
 
+
+
+
+/*
+ * فاصله زمانی بین دو صدای کوتاه.
+ *
+ * کاربرد:
+ *      BUZZER_DOUBLE_BEEP
+ */
 #define BUZZER_PAUSE_TIME_MS          150U
 
+
+
+
+/*
+ * زمان مکث ویژه در الگوی خطا.
+ *
+ * این مکث باعث می‌شود الگوی خطا
+ * از سایر اعلان‌های ساده قابل تشخیص باشد.
+ */
 #define BUZZER_ERROR_PAUSE_MS         500U
 
 
 
 /******************************************************************************
  *                         Private Variables
+ *
+ * توضیح:
+ *
+ *      تمام متغیرهای این بخش فقط داخل همین فایل قابل استفاده هستند.
+ *
+ *      دلیل خصوصی بودن:
+ *
+ *          - جلوگیری از دستکاری ناخواسته وضعیت Buzzer
+ *          - حفظ استقلال Driver
+ *          - ساده‌تر شدن Debug و نگهداری پروژه
+ *
  ******************************************************************************/
 
-/*
- * Current requested buzzer pattern.
- *
- * This variable is private to this module.
- * Other modules communicate through Buzzer_SetPattern().
- */
 
+
+/*
+ * الگوی صوتی فعلی که توسط Application درخواست شده است.
+ *
+ * نکته:
+ *
+ *      Application فقط از طریق تابع:
+ *
+ *          Buzzer_SetPattern()
+ *
+ *      می‌تواند این مقدار را تغییر دهد.
+ *
+ *      سایر بخش‌های پروژه به این متغیر دسترسی ندارند.
+ */
 static Buzzer_Pattern_t current_pattern = BUZZER_OFF;
 
 
-/*
- * Current execution step of the buzzer state machine.
- */
 
+
+/*
+ * مرحله فعلی اجرای الگوی صوتی.
+ *
+ * توضیح:
+ *
+ *      هر Pattern از چند مرحله تشکیل می‌شود.
+ *
+ *      برای مثال:
+ *
+ *      BUZZER_DOUBLE_BEEP:
+ *
+ *          مرحله 0:
+ *              روشن کردن Buzzer
+ *
+ *          مرحله 1:
+ *              خاموش کردن Buzzer بعد از زمان مشخص
+ *
+ *          مرحله 2:
+ *              ایجاد فاصله زمانی
+ *
+ *          مرحله 3:
+ *              اجرای صدای دوم
+ *
+ *
+ *      این روش باعث می‌شود بدون Delay،
+ *      توالی صداها اجرا شوند.
+ */
 static uint8_t buzzer_step = 0U;
 
 
-/*
- * Timestamp of the last buzzer state change.
- */
 
+
+/*
+ * زمان آخرین تغییر وضعیت داخلی Buzzer.
+ *
+ * واحد:
+ *
+ *      میلی‌ثانیه
+ *
+ * منبع زمان:
+ *
+ *      HAL_GetTick()
+ *
+ *
+ * این مقدار برای محاسبه مدت زمان روشن یا خاموش بودن Buzzer
+ * استفاده می‌شود.
+ */
 static uint32_t buzzer_timestamp = 0U;
 
 
-/*
- * Indicates whether a pattern is currently running.
- */
 
+
+/*
+ * نشان‌دهنده فعال بودن اجرای یک Pattern.
+ *
+ *
+ * true:
+ *
+ *      یک الگوی صوتی در حال اجرا است.
+ *
+ *
+ * false:
+ *
+ *      Driver در حالت انتظار قرار دارد.
+ */
 static bool buzzer_active = false;
+
+
+
+
+/******************************************************************************
+ *                         Private Function Prototypes
+ *
+ * توضیح:
+ *
+ *      توابع این بخش فقط توسط buzzer.c استفاده می‌شوند.
+ *
+ *      قرار دادن Prototype ها قبل از پیاده‌سازی توابع باعث می‌شود:
+ *
+ *          - ساختار فایل خواناتر باشد.
+ *          - خطاهای مربوط به ترتیب تعریف توابع کاهش پیدا کند.
+ *
+ ******************************************************************************/
+
+
+
+/**
+ * @brief
+ *      روشن کردن خروجی سخت‌افزاری Buzzer.
+ *
+ * @details
+ *
+ *      این تابع تنها نقطه‌ای است که Driver فرمان روشن شدن
+ *      GPIO مربوط به Buzzer را صادر می‌کند.
+ *
+ */
+static void Buzzer_HardwareOn(void);
+
+
+
+
+/**
+ * @brief
+ *      خاموش کردن خروجی سخت‌افزاری Buzzer.
+ *
+ * @details
+ *
+ *      قرار دادن کنترل سخت‌افزار در یک تابع مستقل باعث می‌شود
+ *      در صورت تغییر مدار Buzzer در آینده، فقط همین بخش نیاز به
+ *      اصلاح داشته باشد.
+ *
+ */
+static void Buzzer_HardwareOff(void);
+
+
+
+
+/**
+ * @brief
+ *      شروع اجرای یک Pattern جدید.
+ *
+ * @details
+ *
+ *      این تابع وضعیت داخلی State Machine را
+ *      برای اجرای یک اعلان جدید آماده می‌کند.
+ *
+ */
+static void Buzzer_Start(void);
+
+
+
+
+/******************************************************************************
+ *                         Public Functions
+ ******************************************************************************/
+
+
+
+/**
+ * @brief
+ *      مقداردهی اولیه Driver مربوط به Buzzer.
+ *
+ * @details
+ *
+ *      این تابع در زمان راه‌اندازی سیستم فراخوانی می‌شود.
+ *
+ *      هدف آن قرار دادن Driver در یک وضعیت مشخص و امن است.
+ *
+ *
+ *      عملیات انجام شده:
+ *
+ *          1- خاموش کردن خروجی سخت‌افزار Buzzer
+ *
+ *          2- قرار دادن Pattern جاری روی حالت خاموش
+ *
+ *          3- توقف اجرای هرگونه توالی صوتی قبلی
+ *
+ *          4- آماده‌سازی State Machine داخلی
+ *
+ *
+ * @note
+ *
+ *      تنظیم GPIO مربوط به Buzzer توسط STM32CubeMX انجام می‌شود.
+ *
+ *      این تابع فقط مسئول منطق داخلی Driver است.
+ *
+ */
+void Buzzer_Init(void)
+{
+    /*
+     * قرار دادن سخت‌افزار در وضعیت خاموش.
+     *
+     * دلیل:
+     *
+     *      هنگام روشن شدن MCU ممکن است وضعیت پایه GPIO
+     *      برای لحظه کوتاهی مشخص نباشد.
+     *
+     *      بنابراین Driver همیشه شروع امنی خواهد داشت.
+     */
+    Buzzer_HardwareOff();
+
+
+
+    /*
+     * هیچ Pattern فعالی وجود ندارد.
+     */
+    current_pattern = BUZZER_OFF;
+
+
+
+    /*
+     * State Machine در حالت انتظار قرار می‌گیرد.
+     */
+    buzzer_active = false;
+
+
+
+    /*
+     * مرحله اجرای Pattern صفر می‌شود.
+     */
+    buzzer_step = 0U;
+
+
+
+    /*
+     * مقداردهی اولیه زمان.
+     *
+     * این کار باعث می‌شود وضعیت داخلی کاملاً مشخص باشد.
+     */
+    buzzer_timestamp = HAL_GetTick();
+}
+
+
+
+
+
+/**
+ * @brief
+ *      درخواست اجرای یک الگوی صوتی جدید.
+ *
+ * @param pattern
+ *      الگوی صوتی مورد نظر.
+ *
+ * @details
+ *
+ *      این تابع مستقیماً صدا تولید نمی‌کند.
+ *
+ *      فقط درخواست Application را ثبت می‌کند.
+ *
+ *      اجرای واقعی توسط Buzzer_Task()
+ *      انجام می‌شود.
+ *
+ *
+ *      مزیت این روش:
+ *
+ *          - CPU متوقف نمی‌شود.
+ *          - سایر Task ها اجرا می‌شوند.
+ *          - زمان‌بندی صدا قابل کنترل باقی می‌ماند.
+ *
+ *
+ * @note
+ *
+ *      اگر Pattern جدید ارسال شود،
+ *      اجرای Pattern قبلی متوقف شده
+ *      و Pattern جدید شروع می‌شود.
+ *
+ */
+void Buzzer_SetPattern(Buzzer_Pattern_t pattern)
+{
+    /*
+     * ذخیره درخواست جدید.
+     */
+    current_pattern = pattern;
+
+
+
+    /*
+     * اگر درخواست خاموش شدن باشد،
+     * اجرای هر Pattern متوقف می‌شود.
+     */
+    if(pattern == BUZZER_OFF)
+    {
+        Buzzer_HardwareOff();
+
+        buzzer_active = false;
+
+        buzzer_step = 0U;
+    }
+    else
+    {
+        /*
+         * آماده‌سازی State Machine
+         * برای اجرای Pattern جدید.
+         */
+        Buzzer_Start();
+    }
+}
+
+
+
+
+
+/**
+ * @brief
+ *      خاموش کردن فوری Buzzer.
+ *
+ * @details
+ *
+ *      این تابع برای شرایطی استفاده می‌شود که
+ *      لازم است بدون انتظار برای پایان Pattern،
+ *      خروجی فوراً خاموش شود.
+ *
+ */
+void Buzzer_Off(void)
+{
+    /*
+     * لغو Pattern جاری.
+     */
+    current_pattern = BUZZER_OFF;
+
+
+
+    /*
+     * توقف اجرای State Machine.
+     */
+    buzzer_active = false;
+
+
+
+    /*
+     * خاموش کردن واقعی سخت‌افزار.
+     */
+    Buzzer_HardwareOff();
+
+
+
+    /*
+     * بازگرداندن مرحله داخلی به مقدار اولیه.
+     */
+    buzzer_step = 0U;
+}
+
+
+
+/**
+ * @brief
+ *      اجرای دوره‌ای State Machine مربوط به Buzzer.
+ *
+ * @details
+ *
+ *      این تابع قلب اصلی Driver است.
+ *
+ *      Application فقط درخواست یک Pattern را ارسال می‌کند،
+ *      اما اجرای واقعی مراحل صوتی در این تابع انجام می‌شود.
+ *
+ *
+ *      روش کار:
+ *
+ *          1- زمان فعلی سیستم خوانده می‌شود.
+ *
+ *          2- وضعیت فعلی Pattern بررسی می‌شود.
+ *
+ *          3- مرحله فعلی اجرا می‌شود.
+ *
+ *          4- در صورت رسیدن زمان لازم،
+ *             مرحله بعدی فعال می‌شود.
+ *
+ *
+ *      این طراحی باعث می‌شود:
+ *
+ *          - از HAL_Delay استفاده نشود.
+ *          - CPU آزاد بماند.
+ *          - Task های دیگر بدون وقفه اجرا شوند.
+ *
+ *
+ * @note
+ *
+ *      این تابع باید به صورت مرتب در حلقه اصلی فراخوانی شود.
+ *
+ */
+void Buzzer_Task(void)
+{
+    uint32_t now;
+
+
+
+    /*
+     * دریافت زمان فعلی سیستم.
+     *
+     * HAL_GetTick() زمان را بر حسب میلی‌ثانیه
+     * از زمان روشن شدن MCU برمی‌گرداند.
+     */
+    now = HAL_GetTick();
+
+
+
+
+    /*
+     * اگر هیچ Pattern فعالی وجود ندارد،
+     * نیازی به ادامه پردازش نیست.
+     */
+    if(!buzzer_active)
+    {
+        return;
+    }
+
+
+
+
+
+    switch(current_pattern)
+    {
+
+
+
+        /**********************************************************************
+         * Pattern:
+         *
+         *      BUZZER_SHORT_BEEP
+         *
+         * عملکرد:
+         *
+         *      روشن شدن Buzzer برای مدت کوتاه
+         *      و سپس خاموش شدن.
+         *
+         **********************************************************************/
+        case BUZZER_SHORT_BEEP:
+
+
+
+            if(buzzer_step == 0U)
+            {
+                /*
+                 * شروع صدای کوتاه.
+                 */
+                Buzzer_HardwareOn();
+
+
+
+                /*
+                 * ثبت زمان شروع صدا.
+                 */
+                buzzer_timestamp = now;
+
+
+
+                /*
+                 * رفتن به مرحله خاموش کردن.
+                 */
+                buzzer_step = 1U;
+            }
+
+
+
+            else if((now - buzzer_timestamp)
+                    >= BUZZER_SHORT_TIME_MS)
+            {
+                /*
+                 * مدت زمان صدای کوتاه تمام شده است.
+                 */
+                Buzzer_HardwareOff();
+
+
+
+                /*
+                 * پایان Pattern.
+                 */
+                buzzer_active = false;
+            }
+
+
+
+            break;
+
+
+
+
+
+
+
+        /**********************************************************************
+         * Pattern:
+         *
+         *      BUZZER_DOUBLE_BEEP
+         *
+         * عملکرد:
+         *
+         *      تولید دو صدای کوتاه پشت سر هم
+         *      با یک فاصله زمانی مشخص.
+         *
+         *
+         * مراحل:
+         *
+         *      مرحله 0:
+         *          روشن شدن صدای اول
+         *
+         *      مرحله 1:
+         *          خاموش شدن صدای اول
+         *
+         *      مرحله 2:
+         *          انتظار بین دو صدا
+         *
+         *      مرحله 3:
+         *          اجرای صدای دوم
+         *
+         **********************************************************************/
+        case BUZZER_DOUBLE_BEEP:
+
+
+
+            if(buzzer_step == 0U)
+            {
+                /*
+                 * شروع صدای اول.
+                 */
+                Buzzer_HardwareOn();
+
+
+
+                buzzer_timestamp = now;
+
+
+
+                buzzer_step = 1U;
+            }
+
+
+
+            else if((buzzer_step == 1U) &&
+                    ((now - buzzer_timestamp)
+                     >= BUZZER_SHORT_TIME_MS))
+            {
+                /*
+                 * پایان صدای اول.
+                 */
+                Buzzer_HardwareOff();
+
+
+
+                /*
+                 * شروع زمان فاصله بین دو Beep.
+                 */
+                buzzer_timestamp = now;
+
+
+
+                buzzer_step = 2U;
+            }
+
+
+
+            else if((buzzer_step == 2U) &&
+                    ((now - buzzer_timestamp)
+                     >= BUZZER_PAUSE_TIME_MS))
+            {
+                /*
+                 * شروع صدای دوم.
+                 */
+                Buzzer_HardwareOn();
+
+
+
+                buzzer_timestamp = now;
+
+
+
+                buzzer_step = 3U;
+            }
+
+
+
+            else if((buzzer_step == 3U) &&
+                    ((now - buzzer_timestamp)
+                     >= BUZZER_SHORT_TIME_MS))
+            {
+                /*
+                 * پایان صدای دوم.
+                 */
+                Buzzer_HardwareOff();
+
+
+
+                /*
+                 * اجرای Pattern کامل شد.
+                 */
+                buzzer_active = false;
+            }
+
+
+
+            break;
+
+
+
+
+
+            /**********************************************************************
+             * Pattern:
+             *
+             *      BUZZER_LONG_BEEP
+             *
+             * عملکرد:
+             *
+             *      روشن نگه داشتن Buzzer برای مدت طولانی‌تر
+             *      نسبت به یک Beep معمولی.
+             *
+             *
+             * کاربرد:
+             *
+             *      - هشدار مهم
+             *      - اطلاع‌رسانی وضعیت خاص سیستم
+             *
+             **********************************************************************/
+            case BUZZER_LONG_BEEP:
+
+
+
+                if(buzzer_step == 0U)
+                {
+                    /*
+                     * شروع صدای طولانی.
+                     */
+                    Buzzer_HardwareOn();
+
+
+
+                    /*
+                     * ذخیره زمان شروع.
+                     */
+                    buzzer_timestamp = now;
+
+
+
+                    /*
+                     * ورود به مرحله انتظار برای پایان صدا.
+                     */
+                    buzzer_step = 1U;
+                }
+
+
+
+                else if((now - buzzer_timestamp)
+                        >= BUZZER_LONG_TIME_MS)
+                {
+                    /*
+                     * زمان صدای طولانی تمام شده است.
+                     */
+                    Buzzer_HardwareOff();
+
+
+
+                    /*
+                     * اجرای Pattern پایان یافته است.
+                     */
+                    buzzer_active = false;
+                }
+
+
+
+                break;
+
+
+
+
+
+
+
+
+            /**********************************************************************
+             * Pattern:
+             *
+             *      BUZZER_ERROR
+             *
+             * عملکرد:
+             *
+             *      تولید یک الگوی هشدار چند مرحله‌ای.
+             *
+             *
+             * توالی:
+             *
+             *      Beep اول
+             *          |
+             *          v
+             *      مکث کوتاه
+             *          |
+             *          v
+             *      Beep دوم
+             *          |
+             *          v
+             *      مکث ویژه خطا
+             *
+             *
+             * دلیل استفاده از الگوی متفاوت:
+             *
+             *      کاربر باید بتواند Alarm خطا را
+             *      از اعلان‌های معمولی تشخیص دهد.
+             *
+             **********************************************************************/
+            case BUZZER_ERROR:
+
+
+
+                if(buzzer_step == 0U)
+                {
+                    /*
+                     * شروع Beep اول.
+                     */
+                    Buzzer_HardwareOn();
+
+
+
+                    buzzer_timestamp = now;
+
+
+
+                    buzzer_step = 1U;
+                }
+
+
+
+                else if((buzzer_step == 1U) &&
+                        ((now - buzzer_timestamp)
+                         >= BUZZER_SHORT_TIME_MS))
+                {
+                    /*
+                     * پایان Beep اول.
+                     */
+                    Buzzer_HardwareOff();
+
+
+
+                    buzzer_timestamp = now;
+
+
+
+                    buzzer_step = 2U;
+                }
+
+
+
+                else if((buzzer_step == 2U) &&
+                        ((now - buzzer_timestamp)
+                         >= BUZZER_PAUSE_TIME_MS))
+                {
+                    /*
+                     * شروع Beep دوم.
+                     */
+                    Buzzer_HardwareOn();
+
+
+
+                    buzzer_timestamp = now;
+
+
+
+                    buzzer_step = 3U;
+                }
+
+
+
+                else if((buzzer_step == 3U) &&
+                        ((now - buzzer_timestamp)
+                         >= BUZZER_SHORT_TIME_MS))
+                {
+                    /*
+                     * پایان Beep دوم.
+                     */
+                    Buzzer_HardwareOff();
+
+
+
+                    buzzer_timestamp = now;
+
+
+
+                    buzzer_step = 4U;
+                }
+
+
+
+                else if((buzzer_step == 4U) &&
+                        ((now - buzzer_timestamp)
+                         >= BUZZER_ERROR_PAUSE_MS))
+                {
+                    /*
+                     * پایان الگوی خطا.
+                     */
+                    buzzer_active = false;
+                }
+
+
+
+                break;
+
+
+
+
+
+
+
+            default:
+
+
+
+                /*
+                 * اگر به هر دلیل Pattern نامعتبر دریافت شود:
+                 *
+                 *      Driver وارد حالت امن می‌شود.
+                 *
+                 *      Buzzer خاموش شده و اجرای فعلی لغو می‌گردد.
+                 */
+                Buzzer_Off();
+
+
+
+                break;
+
+
+
+        }   /* پایان switch */
+
+    }       /* پایان Buzzer_Task() */
 
 
 
@@ -116,9 +1030,28 @@ static bool buzzer_active = false;
  *                         Private Functions
  ******************************************************************************/
 
+
+
 /**
  * @brief
- *      Turn buzzer hardware ON.
+ *      روشن کردن خروجی سخت‌افزاری Buzzer.
+ *
+ * @details
+ *
+ *      این تابع تنها نقطه‌ای در Driver است که فرمان
+ *      روشن شدن GPIO مربوط به Buzzer را صادر می‌کند.
+ *
+ *
+ *      مزیت این طراحی:
+ *
+ *          اگر در آینده:
+ *
+ *              - مدار Buzzer تغییر کند.
+ *              - پایه GPIO تغییر کند.
+ *              - مدار فعال Low شود.
+ *
+ *          فقط همین بخش نیاز به اصلاح خواهد داشت.
+ *
  */
 static void Buzzer_HardwareOn(void)
 {
@@ -129,9 +1062,17 @@ static void Buzzer_HardwareOn(void)
 
 
 
+
+
 /**
  * @brief
- *      Turn buzzer hardware OFF.
+ *      خاموش کردن خروجی سخت‌افزاری Buzzer.
+ *
+ * @details
+ *
+ *      مانند تابع روشن کردن، تمام جزئیات سخت‌افزار
+ *      در همین لایه مخفی شده است.
+ *
  */
 static void Buzzer_HardwareOff(void)
 {
@@ -142,255 +1083,55 @@ static void Buzzer_HardwareOff(void)
 
 
 
+
+
 /**
  * @brief
- *      Start a new buzzer timing sequence.
+ *      شروع اجرای یک Pattern جدید.
+ *
+ * @details
+ *
+ *      این تابع زمانی فراخوانی می‌شود که Application
+ *      یک الگوی صوتی جدید درخواست کند.
+ *
+ *
+ *      وظایف:
+ *
+ *          1- ثبت زمان شروع Pattern
+ *
+ *          2- قرار دادن State Machine در مرحله اول
+ *
+ *          3- فعال کردن اجرای Driver
+ *
+ *
+ *      بعد از این مرحله،
+ *      Buzzer_Task() ادامه مراحل را مدیریت می‌کند.
+ *
  */
 static void Buzzer_Start(void)
 {
+    /*
+     * ثبت زمان شروع اجرای Pattern.
+     */
     buzzer_timestamp = HAL_GetTick();
 
+
+
+    /*
+     * هر Pattern باید از مرحله اول شروع شود.
+     */
     buzzer_step = 0U;
 
+
+
+    /*
+     * فعال کردن پردازش دوره‌ای Driver.
+     */
     buzzer_active = true;
 }
 
 
 
 /******************************************************************************
- *                         Public Functions
+ *                              End of File
  ******************************************************************************/
-
-
-/**
- * @brief
- *      Initialize buzzer module.
- */
-void Buzzer_Init(void)
-{
-    Buzzer_HardwareOff();
-
-    current_pattern = BUZZER_OFF;
-
-    buzzer_active = false;
-
-    buzzer_step = 0U;
-}
-
-
-
-/**
- * @brief
- *      Select buzzer pattern.
- *
- * @param pattern
- *      Requested buzzer notification pattern.
- *
- * @details
- *      This function does not block program execution.
- *      Actual sound generation is handled by Buzzer_Task().
- */
-void Buzzer_SetPattern(Buzzer_Pattern_t pattern)
-{
-    current_pattern = pattern;
-
-    if(pattern == BUZZER_OFF)
-    {
-        Buzzer_HardwareOff();
-
-        buzzer_active = false;
-    }
-    else
-    {
-        Buzzer_Start();
-    }
-}
-
-
-
-/**
- * @brief
- *      Turn buzzer off immediately.
- */
-void Buzzer_Off(void)
-{
-    current_pattern = BUZZER_OFF;
-
-    buzzer_active = false;
-
-    Buzzer_HardwareOff();
-}
-
-
-
-/**
- * @brief
- *      Execute buzzer state machine.
- *
- * @details
- *      This function must be called periodically from the main loop.
- *
- *      Example:
- *
- *          while(1)
- *          {
- *              Buzzer_Task();
- *          }
- */
-void Buzzer_Task(void)
-{
-    uint32_t now = HAL_GetTick();
-
-
-    if(!buzzer_active)
-    {
-        return;
-    }
-
-
-
-    switch(current_pattern)
-    {
-
-        case BUZZER_SHORT_BEEP:
-
-            if(buzzer_step == 0U)
-            {
-                Buzzer_HardwareOn();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 1U;
-            }
-            else if((now - buzzer_timestamp) >= BUZZER_SHORT_TIME_MS)
-            {
-                Buzzer_HardwareOff();
-
-                buzzer_active = false;
-            }
-
-            break;
-
-
-
-        case BUZZER_DOUBLE_BEEP:
-
-            if(buzzer_step == 0U)
-            {
-                Buzzer_HardwareOn();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 1U;
-            }
-            else if(buzzer_step == 1U &&
-                    (now - buzzer_timestamp) >= BUZZER_SHORT_TIME_MS)
-            {
-                Buzzer_HardwareOff();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 2U;
-            }
-            else if(buzzer_step == 2U &&
-                    (now - buzzer_timestamp) >= BUZZER_PAUSE_TIME_MS)
-            {
-                Buzzer_HardwareOn();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 3U;
-            }
-            else if(buzzer_step == 3U &&
-                    (now - buzzer_timestamp) >= BUZZER_SHORT_TIME_MS)
-            {
-                Buzzer_HardwareOff();
-
-                buzzer_active = false;
-            }
-
-            break;
-
-
-
-        case BUZZER_LONG_BEEP:
-
-            if(buzzer_step == 0U)
-            {
-                Buzzer_HardwareOn();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 1U;
-            }
-            else if((now - buzzer_timestamp) >= BUZZER_LONG_TIME_MS)
-            {
-                Buzzer_HardwareOff();
-
-                buzzer_active = false;
-            }
-
-            break;
-
-
-
-        case BUZZER_ERROR:
-
-            /*
-             * Error pattern:
-             *
-             * Three short beeps.
-             */
-
-            if(buzzer_step == 0U)
-            {
-                Buzzer_HardwareOn();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 1U;
-            }
-            else if(buzzer_step == 1U &&
-                    (now - buzzer_timestamp) >= BUZZER_SHORT_TIME_MS)
-            {
-                Buzzer_HardwareOff();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 2U;
-            }
-            else if(buzzer_step == 2U &&
-                    (now - buzzer_timestamp) >= BUZZER_PAUSE_TIME_MS)
-            {
-                Buzzer_HardwareOn();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 3U;
-            }
-            else if(buzzer_step == 3U &&
-                    (now - buzzer_timestamp) >= BUZZER_SHORT_TIME_MS)
-            {
-                Buzzer_HardwareOff();
-
-                buzzer_timestamp = now;
-
-                buzzer_step = 4U;
-            }
-            else if(buzzer_step == 4U &&
-                    (now - buzzer_timestamp) >= BUZZER_ERROR_PAUSE_MS)
-            {
-                buzzer_active = false;
-            }
-
-            break;
-
-
-
-        default:
-
-            Buzzer_Off();
-
-            break;
-    }
-}

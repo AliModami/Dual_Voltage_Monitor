@@ -1,36 +1,101 @@
 /******************************************************************************
  * @file    buzzer.h
- * @brief   Buzzer control interface
+ * @brief   رابط عمومی Driver مربوط به Buzzer
  *-----------------------------------------------------------------------------
  * Project :
  *      Dual Voltage Monitor
  *
  * Description :
- *      This file contains the public interface of the buzzer module.
  *
- *      The buzzer module is responsible for generating different notification
- *      patterns used by the application.
+ *      این فایل رابط عمومی ماژول Buzzer را تعریف می‌کند.
  *
- *      The module is designed independently from the application logic.
- *      Other modules should only use the functions declared in this file and
- *      should not access buzzer hardware directly.
+ *      هدف این ماژول ایجاد یک لایه مستقل بین نرم‌افزار کاربردی
+ *      و سخت‌افزار Buzzer است.
  *
- *      Supported buzzer patterns:
+ *      سایر بخش‌های پروژه نباید به صورت مستقیم به GPIO مربوط به Buzzer
+ *      دسترسی داشته باشند.
  *
- *          - BUZZER_OFF
- *          - BUZZER_SHORT_BEEP
- *          - BUZZER_DOUBLE_BEEP
- *          - BUZZER_LONG_BEEP
- *          - BUZZER_ERROR
+ *      تمام درخواست‌های مربوط به تولید صدا باید از طریق توابع موجود
+ *      در این فایل انجام شود.
+ *
+ *
+ *      وظایف اصلی این Driver:
+ *
+ *          - فعال و غیرفعال کردن Buzzer
+ *          - تولید الگوهای مختلف صوتی
+ *          - مدیریت زمان‌بندی بدون استفاده از Delay
+ *          - اجرای State Machine داخلی
+ *
  *
  *-----------------------------------------------------------------------------
- * Design Rules:
+ * معماری ماژول:
  *
- *      1. Hardware access remains inside buzzer.c.
- *      2. Application modules communicate only through this interface.
- *      3. No global variables are declared in this header file.
- *      4. Timing and state management remain private inside buzzer.c.
- *      5. The buzzer module is non-blocking and uses periodic task execution.
+ *
+ *      Application
+ *
+ *          |
+ *          |
+ *          v
+ *
+ *      Buzzer_SetPattern()
+ *
+ *          |
+ *          |
+ *          v
+ *
+ *      Buzzer State Machine
+ *
+ *          |
+ *          |
+ *          v
+ *
+ *      HAL GPIO
+ *
+ *          |
+ *          |
+ *          v
+ *
+ *      Buzzer Hardware
+ *
+ *
+ *-----------------------------------------------------------------------------
+ * اصول طراحی:
+ *
+ *      1- هیچ بخش دیگری از پروژه نباید مستقیماً GPIO مربوط به Buzzer را
+ *         کنترل کند.
+ *
+ *      2- منطق تولید صدا داخل buzzer.c قرار دارد.
+ *
+ *      3- این Driver به صورت Non-Blocking طراحی شده است.
+ *
+ *      4- برای زمان‌بندی از HAL_GetTick() استفاده می‌شود.
+ *
+ *      5- تابع Buzzer_Task() باید به صورت دوره‌ای در حلقه اصلی فراخوانی شود.
+ *
+ *      6- متغیرهای داخلی و وضعیت اجرای Buzzer در buzzer.c خصوصی هستند.
+ *
+ *
+ *-----------------------------------------------------------------------------
+ * سخت‌افزار:
+ *
+ *      MCU:
+ *          STM32F103C8T6
+ *
+ *
+ *      اتصال:
+ *
+ *          GPIO خروجی MCU
+ *                |
+ *                |
+ *                v
+ *             مدار راه‌انداز Buzzer
+ *
+ *
+ *      نام GPIO توسط STM32CubeMX تولید می‌شود:
+ *
+ *          BUZZER_GPIO_Port
+ *          BUZZER_Pin
+ *
  *
  *-----------------------------------------------------------------------------
  * Author :
@@ -41,11 +106,22 @@
  *
  * Created :
  *      2026-07-08
+ *
+ * Revision History :
+ *
+ *      Version 1.1.0
+ *
+ *          - بازنویسی مستندات فایل
+ *          - بهبود توضیحات معماری
+ *          - حفظ کامل API نسخه قبل
+ *
  ******************************************************************************/
+
 
 
 #ifndef BUZZER_H
 #define BUZZER_H
+
 
 
 #ifdef __cplusplus
@@ -54,10 +130,19 @@ extern "C"
 #endif
 
 
+
 /******************************************************************************
  *                              Include Files
+ *
+ * توضیح:
+ *
+ *      این Header عمداً هیچ وابستگی سخت‌افزاری ندارد.
+ *
+ *      تعریف‌های مربوط به GPIO و HAL فقط باید در buzzer.c وجود داشته باشند.
+ *
+ *      این کار باعث کاهش Coupling و افزایش قابلیت استفاده مجدد Driver می‌شود.
+ *
  ******************************************************************************/
-
 
 
 
@@ -66,151 +151,226 @@ extern "C"
  *                              Type Definitions
  ******************************************************************************/
 
+
 /**
  * @brief
- *      Available buzzer operating patterns.
+ *      الگوهای قابل تولید توسط Buzzer.
  *
  * @details
- *      The application selects a pattern instead of controlling the buzzer
- *      hardware directly.
  *
- *      This separation keeps the software modular and allows the buzzer
- *      implementation to change without modifying other application modules.
+ *      Application فقط نوع اعلان مورد نیاز را انتخاب می‌کند
+ *      و مسئولیت تولید توالی زمانی صدا بر عهده Driver است.
+ *
+ *
+ *      به عنوان مثال:
+ *
+ *          Buzzer_SetPattern(BUZZER_SHORT_BEEP);
+ *
+ *
+ *      باعث می‌شود Driver بدون توقف CPU،
+ *      الگوی مربوط به یک صدای کوتاه را اجرا کند.
+ *
  */
 typedef enum
 {
-    /*
-     * Disable buzzer output.
-     */
-    BUZZER_OFF = 0,
 
 
-    /*
-     * One short notification beep.
-     *
-     * Typical usage:
-     *      Button confirmation
-     *      Simple user feedback
-     */
-    BUZZER_SHORT_BEEP,
-
-
-    /*
-     * Two short notification beeps.
-     *
-     * Typical usage:
-     *      Different user notification
-     */
-    BUZZER_DOUBLE_BEEP,
-
-
-    /*
-     * One long notification beep.
-     *
-     * Typical usage:
-     *      Important user information
-     */
-    BUZZER_LONG_BEEP,
-
-
-    /*
-     * Error notification pattern.
-     *
-     * Typical usage:
-     *      Fault conditions
-     *      Protection alarms
-     */
-    BUZZER_ERROR
-
-
-} Buzzer_Pattern_t;
+	/*
+	 * خاموش بودن Buzzer.
+	 *
+	 * کاربرد:
+	 *
+	 *      توقف فوری هرگونه الگوی در حال اجرا.
+	 */
+	    BUZZER_OFF = 0U,
 
 
 
-/******************************************************************************
- *                              Public Functions
- ******************************************************************************/
-
-/**
- * @brief
- *      Initialize buzzer module.
- *
- * @details
- *      This function prepares the buzzer module and places the hardware
- *      in a safe OFF state.
- *
- * @return
- *      None.
- */
-void Buzzer_Init(void);
+	/*
+	 * یک صدای کوتاه.
+	 *
+	 * کاربردهای معمول:
+	 *
+	 *      - تأیید فشردن کلید
+	 *      - تأیید انتخاب گزینه در منو
+	 *      - اعلان ساده کاربر
+	 */
+	    BUZZER_SHORT_BEEP,
 
 
 
-/**
- * @brief
- *      Select buzzer operating pattern.
- *
- * @param pattern
- *      Requested buzzer pattern.
- *
- * @details
- *      This function only requests a new pattern.
- *
- *      The actual execution is performed by Buzzer_Task().
- *
- *      This function is non-blocking and does not stop the CPU.
- *
- * @return
- *      None.
- */
-void Buzzer_SetPattern(Buzzer_Pattern_t pattern);
+	/*
+	 * دو صدای کوتاه متوالی.
+	 *
+	 * کاربردهای معمول:
+	 *
+	 *      - اعلان متفاوت نسبت به Short Beep
+	 *      - تأیید عملیات خاص
+	 */
+	    BUZZER_DOUBLE_BEEP,
 
 
 
-/**
- * @brief
- *      Turn buzzer off immediately.
- *
- * @details
- *      Cancels any running buzzer pattern.
- *
- * @return
- *      None.
- */
-void Buzzer_Off(void);
+	/*
+	 * یک صدای طولانی.
+	 *
+	 * کاربردهای معمول:
+	 *
+	 *      - اطلاع‌رسانی مهم
+	 *      - هشدار کاربر
+	 */
+	    BUZZER_LONG_BEEP,
 
 
 
-/**
- * @brief
- *      Execute buzzer state machine.
- *
- * @details
- *      This function must be called periodically from the main application
- *      loop.
- *
- *      Example:
- *
- *          while(1)
- *          {
- *              Buzzer_Task();
- *
- *              Other_Application_Tasks();
- *          }
- *
- *      The function uses HAL_GetTick() internally and does not block
- *      program execution.
- *
- * @return
- *      None.
- */
-void Buzzer_Task(void);
+	/*
+	 * الگوی خطا.
+	 *
+	 * کاربردهای معمول:
+	 *
+	 *      - خطای سیستم
+	 *      - شرایط Alarm
+	 *      - خطاهای حفاظتی
+	 */
+	    BUZZER_ERROR
+
+
+	} Buzzer_Pattern_t;
 
 
 
-#ifdef __cplusplus
-}
-#endif
+	/******************************************************************************
+	 *                              Public Functions
+	 ******************************************************************************/
 
 
-#endif /* BUZZER_H */
+
+	/**
+	 * @brief
+	 *      مقداردهی اولیه Driver مربوط به Buzzer.
+	 *
+	 * @details
+	 *
+	 *      این تابع باید قبل از استفاده از سایر توابع Buzzer
+	 *      یک بار در زمان راه‌اندازی سیستم فراخوانی شود.
+	 *
+	 *
+	 *      وظایف:
+	 *
+	 *          - قرار دادن خروجی Buzzer در وضعیت امن OFF
+	 *          - پاک کردن وضعیت داخلی Driver
+	 *          - آماده‌سازی State Machine
+	 *
+	 *
+	 * @note
+	 *
+	 *      پیکربندی GPIO توسط STM32CubeMX انجام می‌شود.
+	 *      این تابع فقط منطق داخلی Driver را آماده می‌کند.
+	 *
+	 */
+	void Buzzer_Init(void);
+
+
+
+
+	/**
+	 * @brief
+	 *      انتخاب الگوی صدای جدید.
+	 *
+	 * @param pattern
+	 *      الگوی مورد نظر از نوع Buzzer_Pattern_t
+	 *
+	 * @details
+	 *
+	 *      این تابع فقط درخواست اجرای یک Pattern را ثبت می‌کند.
+	 *
+	 *      تولید واقعی صدا در تابع Buzzer_Task()
+	 *      انجام می‌شود.
+	 *
+	 *
+	 *      بنابراین این تابع:
+	 *
+	 *          - Blocking نیست.
+	 *          - از HAL_Delay استفاده نمی‌کند.
+	 *          - اجرای سایر Task های سیستم را متوقف نمی‌کند.
+	 *
+	 *
+	 *      مثال:
+	 *
+	 *          Buzzer_SetPattern(BUZZER_ERROR);
+	 *
+	 */
+	void Buzzer_SetPattern(Buzzer_Pattern_t pattern);
+
+
+
+
+	/**
+	 * @brief
+	 *      خاموش کردن فوری Buzzer.
+	 *
+	 * @details
+	 *
+	 *      این تابع:
+	 *
+	 *          - Pattern جاری را لغو می‌کند.
+	 *          - خروجی سخت‌افزار را خاموش می‌کند.
+	 *          - Driver را به وضعیت Idle برمی‌گرداند.
+	 *
+	 *
+	 *      کاربرد:
+	 *
+	 *          - توقف Alarm
+	 *          - خاموش کردن اعلان هنگام تغییر وضعیت سیستم
+	 *
+	 */
+	void Buzzer_Off(void);
+
+
+
+
+	/**
+	 * @brief
+	 *      اجرای دوره‌ای State Machine مربوط به Buzzer.
+	 *
+	 * @details
+	 *
+	 *      این تابع باید به صورت مداوم از حلقه اصلی برنامه
+	 *      فراخوانی شود.
+	 *
+	 *
+	 *      نمونه استفاده:
+	 *
+	 *
+	 *          while(1)
+	 *          {
+	 *              Buzzer_Task();
+	 *
+	 *              Other_Tasks();
+	 *          }
+	 *
+	 *
+	 *      این تابع با استفاده از HAL_GetTick()
+	 *      زمان‌بندی صدا را انجام می‌دهد.
+	 *
+	 *      هیچ Delay مسدودکننده‌ای در آن استفاده نمی‌شود.
+	 *
+	 */
+	void Buzzer_Task(void);
+
+
+
+
+	#ifdef __cplusplus
+	}
+	#endif
+
+
+
+	#endif /* BUZZER_H */
+
+
+	/******************************************************************************
+	 *                              End of File
+	 ******************************************************************************/
+
