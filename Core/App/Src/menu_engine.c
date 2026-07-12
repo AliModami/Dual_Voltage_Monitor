@@ -1,145 +1,179 @@
 /******************************************************************************
  *
- * File Name   : menu_engine.c
+ * @file    menu_engine.c
  *
- * Description :
+ * @brief   Menu Navigation Engine Implementation
  *
- *     Generic Menu Navigation Engine
- *
- *     This module implements the menu logic layer.
- *
- *     Responsibilities:
- *
- *         - Menu initialization
- *         - Navigation between items
- *         - Enter / Back handling
- *         - Callback execution
- *         - Current page management
- *
- *
- * Architecture:
- *
- *
- *          Buttons Layer
- *                |
- *                v
- *
- *          Menu Engine
- *
- *                |
- *        +-------+-------+
- *        |               |
- *        v               v
- *
- *    Menu Database     Renderer
- *
- *
- *
- * IMPORTANT:
- *
- *     This module does NOT know:
- *
- *         - LCD
- *         - GPIO
- *         - UART
- *         - ADC
- *
- *
- *     It only controls menu state.
- *
- *
+ *------------------------------------------------------------------------------
  *
  * Project :
+ *
  *      Dual Voltage Monitor
  *
+ *------------------------------------------------------------------------------
+ *
  * MCU :
+ *
  *      STM32F103C8T6
  *
+ *------------------------------------------------------------------------------
+ *
+ * Framework :
+ *
+ *      STM32 HAL
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Description
+ * ============================================================================
+ *
+ * این فایل هسته منطقی سیستم Menu را پیاده‌سازی می‌کند.
+ *
+ * مسئولیت این ماژول:
+ *
+ *      - مدیریت صفحه جاری
+ *      - مدیریت Item انتخاب شده
+ *      - پردازش Event های منو
+ *      - Navigation بین Page ها
+ *      - اجرای Callback های مربوط به Action ها
+ *
+ *
+ * این فایل هیچ شناختی از:
+ *
+ *      LCD
+ *      GPIO
+ *      Button Driver
+ *      UART
+ *      ADC
+ *
+ * ندارد.
+ *
+ *
+ * معماری:
+ *
+ *
+ *                  Button Application
+ *                         |
+ *                         |
+ *                    Menu Event
+ *                         |
+ *                         v
+ *
+ *                 +---------------+
+ *                 | menu_engine.c |
+ *                 +---------------+
+ *
+ *                         |
+ *                         |
+ *              +----------+----------+
+ *              |                     |
+ *              v                     v
+ *
+ *        menu_items.c          menu_renderer.c
+ *
+ *        Database              Display
+ *
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Design Rules
+ * ============================================================================
+ *
+ * 1- Menu Engine مالک MenuItem و MenuPage نیست.
+ *
+ * 2- تمام Item ها در menu_items.c به صورت Static ساخته می‌شوند.
+ *
+ * 3- Engine فقط Pointer آن‌ها را مدیریت می‌کند.
+ *
+ * 4- Renderer فقط وضعیت Engine را می‌خواند.
+ *
+ * 5- Engine هیچ دسترسی مستقیم به سخت‌افزار ندارد.
+ *
+ *
+ *------------------------------------------------------------------------------
  *
  * Author :
- *      Ali Modami
  *
+ *      Ali Modami & OpenAI
+ *
+ *------------------------------------------------------------------------------
  *
  * Version :
- *      1.1.0
+ *
+ *      2.0.0
  *
  ******************************************************************************/
 
-
 /******************************************************************************
- *
  * Includes
- *
  ******************************************************************************/
 
 #include "menu_engine.h"
+
 #include "menu_items.h"
 
 #include <stddef.h>
-#include <stdint.h>
+#include <stdbool.h>
 
 
 
 /******************************************************************************
- *
  * Private Variables
- *
  ******************************************************************************/
 
 /*
- * Current active menu page.
+ * تنها نمونه Runtime از Menu Engine
  *
- * Renderer reads this page
- * to know what should be displayed.
+ * این ساختار وضعیت فعلی Navigation را نگهداری می‌کند.
  *
+ * توجه:
+ *
+ * این متغیر مالک Database نیست.
  */
-
-static MenuPage_t *g_currentPage = NULL;
-
-
-
-/*
- * Parent page.
- *
- * Used for BACK navigation.
- *
- * Current architecture supports
- * one level parent navigation.
- *
- */
-
-static MenuPage_t *g_parentPage = NULL;
-
-
-
-/*
- * Initialization flag.
- *
- */
-
-static uint8_t g_menuEngineInitialized = 0;
+static MenuEngine_t g_menuEngine;
 
 
 
 /******************************************************************************
- *
  * Private Function Prototypes
- *
  ******************************************************************************/
 
+/*
+ * حرکت به Item بعدی
+ */
 static void MenuEngine_SelectNext(void);
 
+
+
+/*
+ * حرکت به Item قبلی
+ */
 static void MenuEngine_SelectPrevious(void);
 
+
+
+/*
+ * اجرای Item انتخاب شده
+ */
 static void MenuEngine_EnterItem(void);
 
+
+
+/*
+ * بازگشت به Page والد
+ */
 static void MenuEngine_Back(void);
 
 
 
 /******************************************************************************
  *
- * Public Function:
+ * Public Functions
+ *
+ ******************************************************************************/
+
+
+/******************************************************************************
  *
  * MenuEngine_Init()
  *
@@ -149,851 +183,615 @@ static void MenuEngine_Back(void);
  * @brief
  *      Initialize Menu Engine.
  *
- *
  * @details
  *
- *      This function connects the engine
- *      to the menu database.
+ *      این تابع باید بعد از:
+ *
+ *          Menu_ItemsInit()
+ *
+ *      فراخوانی شود.
  *
  *
- *      Required order:
+ *      ترتیب صحیح:
+ *
+ *          Menu_ItemsInit();
+ *
+ *          MenuEngine_Init();
  *
  *
- *          MenuItems_Init()
- *
- *                  |
- *                  v
- *
- *          MenuEngine_Init()
- *
- *
- */
+ ******************************************************************************/
 
 void MenuEngine_Init(void)
 {
 
     /*
-     * Start from Main Menu.
-     *
-     * Main menu object is created
-     * inside menu_items.c
-     *
+     * پاک کردن وضعیت قبلی Engine
      */
+    g_menuEngine.currentPage =
+            NULL;
 
 
-    g_currentPage =
-            &g_mainMenuPage;
+    g_menuEngine.currentItem =
+            NULL;
+
+
+    g_menuEngine.state =
+            MENU_STATE_IDLE;
+
+
+    g_menuEngine.pageChanged =
+            false;
+
+
+    g_menuEngine.selectionChanged =
+            false;
+
+
+    g_menuEngine.editMode =
+            false;
 
 
 
     /*
-     * Root menu has no parent.
-     *
+     * دریافت Root Page از Database
      */
+    g_menuEngine.currentPage =
+            Menu_GetMainPage();
 
-    g_parentPage = NULL;
+
+
+    if(g_menuEngine.currentPage != NULL)
+    {
+
+        /*
+         * انتخاب اولین Item صفحه اصلی
+         */
+        g_menuEngine.currentItem =
+                g_menuEngine.currentPage->firstItem;
 
 
 
-    /*
-     * Engine is ready.
-     *
-     */
+        g_menuEngine.currentPage->selectedItem =
+                g_menuEngine.currentItem;
 
-    g_menuEngineInitialized = 1;
 
+
+        /*
+         * درخواست Refresh اولیه LCD
+         */
+        g_menuEngine.pageChanged =
+                true;
+
+    }
 
 }
 
+
+
 /******************************************************************************
  *
- * MenuEngine_Process()
+ * MenuEngine_ProcessEvent()
  *
  ******************************************************************************/
 
 /**
  * @brief
- *      Process incoming menu event.
+ *      Process external menu event.
+ *
+ * @param event
+ *      Menu event generated by Application layer.
  *
  *
- * Events are generated by Button Application Layer.
+ * @details
  *
- * Engine does not know:
+ *      این تابع تنها ورودی خارجی Engine است.
  *
- *      - GPIO
- *      - Button pins
- *      - HAL
+ *      Engine فقط Event های منطقی دریافت می‌کند:
  *
- *
- * It only receives logical events.
+ *          MENU_EVENT_UP
+ *          MENU_EVENT_DOWN
+ *          MENU_EVENT_ENTER
+ *          MENU_EVENT_BACK
  *
  ******************************************************************************/
 
-void MenuEngine_Process(MenuEvent_t event)
+void MenuEngine_ProcessEvent(MenuEvent_t event)
 {
-
-    /*
-     * Safety check.
-     *
-     * Engine must be initialized before processing.
-     *
-     */
-
-    if(g_menuEngineInitialized == 0)
-    {
-        return;
-    }
-
-
 
     switch(event)
     {
 
 
-        /*
-         * Move selection upward.
-         */
-
         case MENU_EVENT_UP:
+
 
             MenuEngine_SelectPrevious();
 
+
             break;
 
 
-
-        /*
-         * Move selection downward.
-         */
 
         case MENU_EVENT_DOWN:
 
+
             MenuEngine_SelectNext();
+
 
             break;
 
 
-
-        /*
-         * Execute selected item.
-         */
 
         case MENU_EVENT_ENTER:
 
+
             MenuEngine_EnterItem();
+
 
             break;
 
 
-
-        /*
-         * Return to parent page.
-         */
 
         case MENU_EVENT_BACK:
 
+
             MenuEngine_Back();
 
+
             break;
 
 
 
         default:
 
-            /*
-             * Ignore unknown events.
-             */
 
             break;
 
     }
 
-
 }
-
-
-
-/******************************************************************************
- *
- * MenuEngine_SelectNext()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Move selection to next menu item.
- *
- *
- * Navigation rule:
- *
- *      Item A
- *          |
- *          v
- *      Item B
- *          |
- *          v
- *      Item C
- *
- *
- * No circular navigation.
- *
- * Last item remains selected.
- *
- ******************************************************************************/
-
-static void MenuEngine_SelectNext(void)
-{
-
-    MenuItem_t *currentItem;
-
-
-
-    /*
-     * Verify active page.
-     */
-
-    if(g_currentPage == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Get current selected item.
-     */
-
-    currentItem =
-            g_currentPage->selectedItem;
-
-
-
-    if(currentItem == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Check next item availability.
-     */
-
-    if(currentItem->next != NULL)
-    {
-
-
-        /*
-         * Update selection pointer.
-         */
-
-        g_currentPage->selectedItem =
-                currentItem->next;
-
-    }
-
-
-}
-
-
-
-/******************************************************************************
- *
- * MenuEngine_SelectPrevious()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Move selection to previous menu item.
- *
- *
- * Navigation rule:
- *
- *      Item C
- *          |
- *          v
- *      Item B
- *          |
- *          v
- *      Item A
- *
- *
- * No wrap around.
- *
- ******************************************************************************/
-
-static void MenuEngine_SelectPrevious(void)
-{
-
-    MenuItem_t *currentItem;
-
-
-
-    /*
-     * Verify active page.
-     */
-
-    if(g_currentPage == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Get current selection.
-     */
-
-    currentItem =
-            g_currentPage->selectedItem;
-
-
-
-    if(currentItem == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Check previous item.
-     */
-
-    if(currentItem->previous != NULL)
-    {
-
-
-        /*
-         * Move selection backward.
-         */
-
-        g_currentPage->selectedItem =
-                currentItem->previous;
-
-    }
-
-
-}
-
-
-
-/******************************************************************************
- *
- * MenuEngine_GetSelectedItem()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Return current selected item.
- *
- *
- * Used by Renderer layer.
- *
- * Renderer only asks:
- *
- *      "Which item is selected?"
- *
- * It does not know navigation logic.
- *
- ******************************************************************************/
-
-MenuItem_t *MenuEngine_GetSelectedItem(void)
-{
-
-    if(g_currentPage == NULL)
-    {
-        return NULL;
-    }
-
-
-
-    return g_currentPage->selectedItem;
-
-}
-
-
-/******************************************************************************
- *
- * MenuEngine_EnterItem()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Handle ENTER event.
- *
- *
- * This function checks the selected menu item
- * and performs the proper operation.
- *
- *
- * Supported item types:
- *
- *      MENU_ITEM_SUBMENU
- *
- *          Open child page
- *
- *
- *      MENU_ITEM_ACTION
- *
- *          Execute callback
- *
- *
- *      MENU_ITEM_VALUE
- *
- *          Reserved for settings engine
- *
- *
- ******************************************************************************/
-
-static void MenuEngine_EnterItem(void)
-{
-
-    MenuItem_t *selectedItem;
-
-
-
-    /*
-     * Safety check:
-     *
-     * Engine must have
-     * an active page.
-     *
-     */
-
-    if(g_currentPage == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Get current selected item.
-     *
-     */
-
-    selectedItem =
-            g_currentPage->selectedItem;
-
-
-
-    /*
-     * No item selected.
-     *
-     */
-
-    if(selectedItem == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Decide operation
-     * based on item type.
-     *
-     */
-
-    switch(selectedItem->type)
-    {
-
-
-
-        /**************************************************************
-         *
-         * Sub Menu Item
-         *
-         **************************************************************/
-
-        case MENU_ITEM_SUBMENU:
-
-
-            /*
-             * Store current page.
-             *
-             * Required for BACK operation.
-             *
-             */
-
-            g_parentPage =
-                    g_currentPage;
-
-
-
-            /*
-             * Open child page.
-             *
-             */
-
-            if(selectedItem->childPage != NULL)
-            {
-
-                g_currentPage =
-                        selectedItem->childPage;
-
-
-                /*
-                 * After entering a new page,
-                 * selection starts from first item.
-                 *
-                 */
-
-                if(g_currentPage->firstItem != NULL)
-                {
-
-                    g_currentPage->selectedItem =
-                            g_currentPage->firstItem;
-
-                }
-
-            }
-
-
-            break;
-
-
-
-
-        /**************************************************************
-         *
-         * Action Item
-         *
-         **************************************************************/
-
-        case MENU_ITEM_ACTION:
-
-
-
-            /*
-             * Execute callback function.
-             *
-             * Callback belongs to menu item.
-             *
-             */
-
-            if(selectedItem->enterCallback != NULL)
-            {
-
-                selectedItem->enterCallback(selectedItem);
-
-            }
-
-
-            break;
-
-
-
-
-        /**************************************************************
-         *
-         * Value Item
-         *
-         **************************************************************/
-
-        case MENU_ITEM_VALUE:
-
-
-            /*
-             * Value editing will be handled
-             * by Settings module.
-             *
-             *
-             * Examples:
-             *
-             *      Sample Time
-             *
-             *      Baud Rate
-             *
-             *      Alarm Limit
-             *
-             */
-
-
-            break;
-
-
-
-
-        default:
-
-
-            /*
-             * Unknown item type.
-             *
-             */
-
-            break;
-
-
-    }
-
-
-}
-
-/******************************************************************************
- *
- * MenuEngine_Back()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Return to previous menu page.
- *
- *
- * BACK operation:
- *
- *
- *      Main Menu
- *
- *          |
- *          |
- *          v
- *
- *      Settings Menu
- *
- *
- *          BACK
- *
- *
- *          |
- *          v
- *
- *      Main Menu
- *
- *
- *
- * The engine does not know anything about:
- *
- *      LCD
- *      Buttons
- *
- *
- * It only changes the active page pointer.
- *
- ******************************************************************************/
-
-static void MenuEngine_Back(void)
-{
-
-
-    /*
-     * Check if parent page exists.
-     *
-     *
-     * If NULL:
-     *
-     *      We are already
-     *      at root menu.
-     *
-     */
-
-    if(g_parentPage == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Restore previous page.
-     *
-     */
-
-    g_currentPage =
-            g_parentPage;
-
-
-
-    /*
-     * Clear parent reference.
-     *
-     * Because current page
-     * becomes active navigation level.
-     *
-     */
-
-    g_parentPage =
-            NULL;
-
-
-
-    /*
-     * Reset selection
-     * to first item of restored page.
-     *
-     */
-
-    if(g_currentPage->firstItem != NULL)
-    {
-
-        g_currentPage->selectedItem =
-                g_currentPage->firstItem;
-
-    }
-
-
-}
-
-
-
-/******************************************************************************
- *
- * MenuEngine_SetPage()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Force engine to open a specific page.
- *
- *
- * Used by:
- *
- *      - Application startup
- *      - Special screens
- *      - Service mode
- *      - Alarm pages
- *
- *
- * Note:
- *
- * This function does not execute callbacks.
- *
- * It only changes navigation state.
- *
- ******************************************************************************/
-
-void MenuEngine_SetPage(MenuPage_t *page)
-{
-
-    if(page == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Change current page.
-     *
-     */
-
-    g_currentPage =
-            page;
-
-
-
-    /*
-     * Start from first item.
-     *
-     */
-
-    if(g_currentPage->firstItem != NULL)
-    {
-
-        g_currentPage->selectedItem =
-                g_currentPage->firstItem;
-
-    }
-
-
-}
-
-
-
-/******************************************************************************
- *
- * MenuEngine_ResetSelection()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Move selection pointer
- *      to first item of current page.
- *
- *
- * Example:
- *
- *
- * Current:
- *
- *      Item 4
- *
- *
- * After reset:
- *
- *      Item 1
- *
- *
- ******************************************************************************/
-
-void MenuEngine_ResetSelection(void)
-{
-
-    if(g_currentPage == NULL)
-    {
-        return;
-    }
-
-
-
-    /*
-     * Select first item.
-     *
-     */
-
-    g_currentPage->selectedItem =
-            g_currentPage->firstItem;
-
-
-}
-
-
-
-/******************************************************************************
- *
- * End Of MenuEngine
- *
- ******************************************************************************/
 
 
 /******************************************************************************
 *
-* MenuEngine_IsInitialized()
+* MenuEngine_SelectNext()
 *
 ******************************************************************************/
 
 /**
 * @brief
-*      Check menu engine initialization state.
+*      Move selection cursor to next item.
+*
+* @details
+*
+*      این تابع فقط Navigation را انجام می‌دهد.
+*
+*      هیچ تغییری در:
+*
+*          LCD
+*          Action
+*          Setting Value
+*
+* ایجاد نمی‌کند.
 *
 *
-* @return
+*      رفتار Navigation:
 *
-*      1  : Engine initialized
+*          Item آخر
+*              |
+*              v
+*          توقف
 *
-*      0  : Engine not initialized
 *
-*
-* This function is useful for:
-*
-*      - Debugging
-*      - Application startup checks
-*      - Safety conditions
+*      Circular Navigation وجود ندارد.
 *
 ******************************************************************************/
 
-uint8_t MenuEngine_IsInitialized(void)
+static void MenuEngine_SelectNext(void)
 {
 
-   return g_menuEngineInitialized;
+   MenuItem_t *currentItem;
+
+
+
+   /*
+    * بررسی وجود Page فعال
+    */
+   if(g_menuEngine.currentPage == NULL)
+   {
+       return;
+   }
+
+
+
+   /*
+    * دریافت Item انتخاب شده فعلی
+    */
+   currentItem =
+           g_menuEngine.currentPage->selectedItem;
+
+
+
+   if(currentItem == NULL)
+   {
+       return;
+   }
+
+
+
+   /*
+    * اگر Item بعدی وجود دارد،
+    * Cursor حرکت می‌کند.
+    */
+   if(currentItem->next != NULL)
+   {
+
+       g_menuEngine.currentPage->selectedItem =
+               currentItem->next;
+
+
+
+       g_menuEngine.currentItem =
+               currentItem->next;
+
+
+
+       /*
+        * فقط مکان‌نما تغییر کرده است.
+        */
+       g_menuEngine.selectionChanged =
+               true;
+
+   }
+
+}
+
+
+
+/******************************************************************************
+*
+* MenuEngine_SelectPrevious()
+*
+******************************************************************************/
+
+/**
+* @brief
+*      Move selection cursor to previous item.
+*
+******************************************************************************/
+
+static void MenuEngine_SelectPrevious(void)
+{
+
+   MenuItem_t *currentItem;
+
+
+
+   if(g_menuEngine.currentPage == NULL)
+   {
+       return;
+   }
+
+
+
+   currentItem =
+           g_menuEngine.currentPage->selectedItem;
+
+
+
+   if(currentItem == NULL)
+   {
+       return;
+   }
+
+
+
+   /*
+    * اگر Item قبلی وجود داشته باشد،
+    * حرکت انجام می‌شود.
+    */
+   if(currentItem->previous != NULL)
+   {
+
+       g_menuEngine.currentPage->selectedItem =
+               currentItem->previous;
+
+
+
+       g_menuEngine.currentItem =
+               currentItem->previous;
+
+
+
+       g_menuEngine.selectionChanged =
+               true;
+
+   }
+
+}
+
+
+
+/******************************************************************************
+*
+* MenuEngine_EnterItem()
+*
+******************************************************************************/
+
+/**
+* @brief
+*      Execute selected menu item.
+*
+* @details
+*
+*      رفتار بر اساس نوع Item تعیین می‌شود.
+*
+*
+*      MENU_ITEM_SUBMENU
+*
+*          ورود به صفحه زیرمجموعه
+*
+*
+*      MENU_ITEM_ACTION
+*
+*          اجرای Callback
+*
+*
+*      MENU_ITEM_VALUE
+*
+*          ورود به حالت Edit
+*
+******************************************************************************/
+
+static void MenuEngine_EnterItem(void)
+{
+
+   MenuItem_t *item;
+
+
+
+   /*
+    * دریافت Page فعال
+    */
+   if(g_menuEngine.currentPage == NULL)
+   {
+       return;
+   }
+
+
+
+   /*
+    * دریافت Item انتخاب شده
+    */
+   item =
+       g_menuEngine.currentPage->selectedItem;
+
+
+
+   if(item == NULL)
+   {
+       return;
+   }
+
+
+
+   switch(item->type)
+   {
+
+
+       /**************************************************************
+        *
+        * Sub Menu
+        *
+        **************************************************************/
+
+       case MENU_ITEM_SUBMENU:
+
+
+           /*
+            * بررسی وجود Page مقصد
+            */
+           if(item->childPage != NULL)
+           {
+
+               /*
+                * تغییر Page فعال
+                */
+               g_menuEngine.currentPage =
+                       item->childPage;
+
+
+
+               /*
+                * انتخاب اولین Item صفحه جدید
+                */
+               g_menuEngine.currentPage->selectedItem =
+                       g_menuEngine.currentPage->firstItem;
+
+
+
+               g_menuEngine.currentItem =
+                       g_menuEngine.currentPage->selectedItem;
+
+
+
+               /*
+                * درخواست Refresh کامل
+                */
+               g_menuEngine.pageChanged =
+                       true;
+
+           }
+
+
+           break;
+
+
+
+       /**************************************************************
+        *
+        * Action Item
+        *
+        **************************************************************/
+
+       case MENU_ITEM_ACTION:
+
+
+           /*
+            * اجرای Callback مربوط به Item
+            */
+           if(item->enterCallback != NULL)
+           {
+
+               item->enterCallback(item);
+
+           }
+
+
+           break;
+
+
+
+       /**************************************************************
+        *
+        * Value Item
+        *
+        **************************************************************/
+
+       case MENU_ITEM_VALUE:
+
+
+           /*
+            * ورود به حالت ویرایش
+            *
+            * مدیریت مقدار واقعی
+            * در Settings Engine انجام خواهد شد.
+            */
+           g_menuEngine.state =
+                   MENU_STATE_EDIT;
+
+
+
+           g_menuEngine.editMode =
+                   true;
+
+
+           break;
+
+
+
+       default:
+
+
+           break;
+
+   }
+
+}
+
+
+
+/******************************************************************************
+*
+* MenuEngine_Back()
+*
+******************************************************************************/
+
+/**
+* @brief
+*      Return to parent page.
+*
+* @details
+*
+*      این تابع فقط Navigation را انجام می‌دهد.
+*
+*
+*      اگر Page جاری Root باشد:
+*
+*          هیچ اتفاقی نمی‌افتد.
+*
+*
+*      اگر Parent Page وجود داشته باشد:
+*
+*          Page قبلی فعال می‌شود.
+*
+******************************************************************************/
+
+static void MenuEngine_Back(void)
+{
+
+   MenuPage_t *parentPage;
+
+
+
+   /*
+    * بررسی Page جاری
+    */
+   if(g_menuEngine.currentPage == NULL)
+   {
+       return;
+   }
+
+
+
+   /*
+    * دریافت Parent
+    */
+   parentPage =
+           g_menuEngine.currentPage->parentPage;
+
+
+
+   /*
+    * اگر Parent وجود نداشته باشد،
+    * یعنی در Root Menu هستیم.
+    */
+   if(parentPage == NULL)
+   {
+       return;
+   }
+
+
+
+   /*
+    * بازگشت به Page والد
+    */
+   g_menuEngine.currentPage =
+           parentPage;
+
+
+
+   /*
+    * انتخاب Item مربوط به این SubMenu
+    *
+    * توجه:
+    *
+    * در طراحی فعلی، Page والد قبلاً
+    * selectedItem خود را حفظ می‌کند.
+    */
+   g_menuEngine.currentItem =
+           g_menuEngine.currentPage->selectedItem;
+
+
+
+   /*
+    * درخواست Refresh کامل صفحه
+    */
+   g_menuEngine.pageChanged =
+           true;
+
+
+
+   /*
+    * خروج از حالت Edit
+    */
+   g_menuEngine.editMode =
+           false;
+
+
+
+   g_menuEngine.state =
+           MENU_STATE_NAVIGATION;
 
 }
 
@@ -1007,28 +805,22 @@ uint8_t MenuEngine_IsInitialized(void)
 
 /**
 * @brief
-*      Return current active page.
+*      Get active menu page.
+*
+* @return
+*      Pointer to current MenuPage.
 *
 *
-* Renderer uses this function
-* to know what should be displayed.
-*
-*
-* Menu Engine does not know:
-*
-*      LCD
-*      Display size
-*      Rendering method
-*
-*
-* It only provides current state.
+* @note
+*      Renderer از این تابع برای دریافت اطلاعات
+*      صفحه جاری استفاده می‌کند.
 *
 ******************************************************************************/
 
 MenuPage_t *MenuEngine_GetCurrentPage(void)
 {
 
-   return g_currentPage;
+   return g_menuEngine.currentPage;
 
 }
 
@@ -1042,30 +834,612 @@ MenuPage_t *MenuEngine_GetCurrentPage(void)
 
 /**
 * @brief
-*      Return currently selected menu item.
+*      Get currently selected menu item.
 *
-*
-* Renderer uses this pointer
-* to draw selection indicator.
-*
-*
-* Example:
-*
-*
-*      > Live Monitor
-*
-*        Settings
-*
-*        System Info
-*
+* @return
+*      Pointer to selected MenuItem.
 *
 ******************************************************************************/
 
+MenuItem_t *MenuEngine_GetSelectedItem(void)
+{
+
+   return g_menuEngine.currentItem;
+
+}
 
 
 
 /******************************************************************************
 *
-* End Of File
+* MenuEngine_IsPageChanged()
 *
 ******************************************************************************/
+
+/**
+* @brief
+*      Check full page refresh request.
+*
+* @return
+*
+*      true:
+*          Page changed.
+*
+*      false:
+*          No page change.
+*
+******************************************************************************/
+
+bool MenuEngine_IsPageChanged(void)
+{
+
+   return g_menuEngine.pageChanged;
+
+}
+
+
+
+/******************************************************************************
+*
+* MenuEngine_ClearPageChanged()
+*
+******************************************************************************/
+
+/**
+* @brief
+*      Clear page refresh flag.
+*
+******************************************************************************/
+
+void MenuEngine_ClearPageChanged(void)
+{
+
+   g_menuEngine.pageChanged =
+           false;
+
+}
+
+
+
+/******************************************************************************
+*
+* MenuEngine_IsSelectionChanged()
+*
+******************************************************************************/
+
+/**
+* @brief
+*      Check cursor movement flag.
+*
+* @return
+*
+*      true:
+*          Only selection changed.
+*
+******************************************************************************/
+
+bool MenuEngine_IsSelectionChanged(void)
+{
+
+   return g_menuEngine.selectionChanged;
+
+}
+
+
+
+/******************************************************************************
+*
+* MenuEngine_ClearSelectionChanged()
+*
+******************************************************************************/
+
+/**
+* @brief
+*      Clear cursor movement flag.
+*
+******************************************************************************/
+
+void MenuEngine_ClearSelectionChanged(void)
+{
+
+   g_menuEngine.selectionChanged =
+           false;
+
+}
+
+
+/******************************************************************************
+ *
+ * MenuEngine_GetState()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Get current state of Menu Engine.
+ *
+ * @return
+ *      Current MenuState_t value.
+ *
+ ******************************************************************************/
+
+MenuState_t MenuEngine_GetState(void)
+{
+
+    return g_menuEngine.state;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_SetState()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Change Menu Engine state.
+ *
+ * @param state
+ *      New engine state.
+ *
+ *
+ * @details
+ *
+ *      این تابع برای تغییر State از بیرون Engine
+ *      استفاده می‌شود.
+ *
+ ******************************************************************************/
+
+void MenuEngine_SetState(MenuState_t state)
+{
+
+    g_menuEngine.state =
+            state;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_IsEditMode()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Check edit mode status.
+ *
+ * @return
+ *
+ *      true:
+ *          Engine is editing a value.
+ *
+ *      false:
+ *          Normal navigation mode.
+ *
+ ******************************************************************************/
+
+bool MenuEngine_IsEditMode(void)
+{
+
+    return g_menuEngine.editMode;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_EnableEditMode()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Enable value edit mode.
+ *
+ ******************************************************************************/
+
+void MenuEngine_EnableEditMode(void)
+{
+
+    g_menuEngine.editMode =
+            true;
+
+
+    g_menuEngine.state =
+            MENU_STATE_EDIT;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_DisableEditMode()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Disable value edit mode.
+ *
+ ******************************************************************************/
+
+void MenuEngine_DisableEditMode(void)
+{
+
+    g_menuEngine.editMode =
+            false;
+
+
+    g_menuEngine.state =
+            MENU_STATE_NAVIGATION;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_SetMessageState()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Enter temporary message state.
+ *
+ * @details
+ *
+ *      این حالت برای نمایش پیام‌های کوتاه استفاده می‌شود:
+ *
+ *          Saved
+ *          Error
+ *          Completed
+ *
+ ******************************************************************************/
+
+void MenuEngine_SetMessageState(void)
+{
+
+    g_menuEngine.state =
+            MENU_STATE_MESSAGE;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_Reset()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Reset engine navigation state.
+ *
+ * @details
+ *
+ *      بعد از Reset:
+ *
+ *          - Root Menu فعال می‌شود.
+ *          - اولین Item انتخاب می‌شود.
+ *
+ ******************************************************************************/
+
+void MenuEngine_Reset(void)
+{
+
+    /*
+     * دریافت Root Page
+     */
+    g_menuEngine.currentPage =
+            Menu_GetMainPage();
+
+
+
+    if(g_menuEngine.currentPage != NULL)
+    {
+
+        /*
+         * انتخاب اولین Item
+         */
+        g_menuEngine.currentItem =
+                g_menuEngine.currentPage->firstItem;
+
+
+
+        g_menuEngine.currentPage->selectedItem =
+                g_menuEngine.currentItem;
+
+    }
+
+
+
+    /*
+     * بازگشت به حالت Navigation
+     */
+    g_menuEngine.state =
+            MENU_STATE_NAVIGATION;
+
+
+
+    g_menuEngine.editMode =
+            false;
+
+
+
+    /*
+     * درخواست Refresh کامل
+     */
+    g_menuEngine.pageChanged =
+            true;
+
+
+
+    g_menuEngine.selectionChanged =
+            false;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_GetItemCount()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Get number of items in current page.
+ *
+ * @return
+ *      Number of Menu Items.
+ *
+ ******************************************************************************/
+
+uint8_t MenuEngine_GetItemCount(void)
+{
+
+    if(g_menuEngine.currentPage == NULL)
+    {
+        return 0;
+    }
+
+
+
+    return g_menuEngine.currentPage->itemCount;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_IsRootPage()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Check if current page is root menu.
+ *
+ * @return
+ *      true if current page has no parent.
+ *
+ ******************************************************************************/
+
+bool MenuEngine_IsRootPage(void)
+{
+
+    if(g_menuEngine.currentPage == NULL)
+    {
+        return true;
+    }
+
+
+
+    return
+        (g_menuEngine.currentPage->parentPage == NULL);
+
+}
+
+
+/******************************************************************************
+ *
+ * MenuEngine_GetCurrentItemId()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Get ID of currently selected item.
+ *
+ * @return
+ *      MenuItemId_t of selected item.
+ *
+ * @details
+ *
+ *      این تابع برای Application Layer و Debug
+ *      استفاده می‌شود.
+ *
+ ******************************************************************************/
+
+MenuItemId_t MenuEngine_GetCurrentItemId(void)
+{
+
+    if(g_menuEngine.currentItem == NULL)
+    {
+        return MENU_ITEM_ID_COUNT;
+    }
+
+
+
+    return g_menuEngine.currentItem->id;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_GetCurrentPageId()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Get ID of current page.
+ *
+ * @return
+ *      MenuPageId_t of active page.
+ *
+ ******************************************************************************/
+
+MenuPageId_t MenuEngine_GetCurrentPageId(void)
+{
+
+    if(g_menuEngine.currentPage == NULL)
+    {
+        return MENU_PAGE_MAIN;
+    }
+
+
+
+    return g_menuEngine.currentPage->id;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_RequestRefresh()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Request complete menu refresh.
+ *
+ * @details
+ *
+ *      Renderer در اجرای بعدی باید
+ *      کل صفحه را دوباره رسم کند.
+ *
+ ******************************************************************************/
+
+void MenuEngine_RequestRefresh(void)
+{
+
+    g_menuEngine.pageChanged =
+            true;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_RequestSelectionRefresh()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Request cursor refresh only.
+ *
+ * @details
+ *
+ *      برای زمانی استفاده می‌شود که فقط
+ *      Item انتخاب شده تغییر کرده است.
+ *
+ ******************************************************************************/
+
+void MenuEngine_RequestSelectionRefresh(void)
+{
+
+    g_menuEngine.selectionChanged =
+            true;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_UpdateCurrentItem()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Synchronize current item pointer.
+ *
+ * @details
+ *
+ *      در معماری فعلی Page مالک selectedItem است.
+ *
+ *      این تابع باعث می‌شود Pointer داخلی Engine
+ *      با Page هماهنگ بماند.
+ *
+ ******************************************************************************/
+
+void MenuEngine_UpdateCurrentItem(void)
+{
+
+    if(g_menuEngine.currentPage == NULL)
+    {
+        return;
+    }
+
+
+
+    g_menuEngine.currentItem =
+            g_menuEngine.currentPage->selectedItem;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * MenuEngine_GetHandle()
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Return Menu Engine object.
+ *
+ * @return
+ *      Pointer to engine instance.
+ *
+ * @note
+ *
+ *      این تابع برای ماژول‌هایی که نیاز به مشاهده
+ *      وضعیت Engine دارند استفاده می‌شود.
+ *
+ ******************************************************************************/
+
+MenuEngine_t *MenuEngine_GetHandle(void)
+{
+
+    return &g_menuEngine;
+
+}
+
+
+
+/******************************************************************************
+ *
+ * End Of File
+ *
+ ******************************************************************************/

@@ -79,15 +79,18 @@
  * پیاده‌سازی می‌شوند.
  */
 
-extern void Menu_Action_LiveMonitor(MenuItem_t *item);
+#include "menu_actions.h"
 
-extern void Menu_Action_StartStream(MenuItem_t *item);
 
-extern void Menu_Action_SystemInfo(MenuItem_t *item);
-
-extern void Menu_Action_Calibration(MenuItem_t *item);
-
-extern void Menu_Action_ServiceMode(MenuItem_t *item);
+//extern void Menu_Action_LiveMonitor(MenuItem_t *item);
+//
+//extern void Menu_Action_StartStream(MenuItem_t *item);
+//
+//extern void Menu_Action_SystemInfo(MenuItem_t *item);
+//
+//extern void Menu_Action_Calibration(MenuItem_t *item);
+//
+//extern void Menu_Action_ServiceMode(MenuItem_t *item);
 
 /******************************************************************************
  * Static Function Prototypes
@@ -503,6 +506,21 @@ static void Menu_CreateItems(void)
     /*
      * System Information
      */
+//------------------------------------------------------------------------
+//    g_systemInfoItem.id =
+//            MENU_ITEM_ID_SYSTEM_INFO;
+//
+//    g_systemInfoItem.title =
+//            "System Information";
+//
+//    g_systemInfoItem.type =
+//            MENU_ITEM_ACTION;
+
+    /*
+     * System Information
+     *
+     * ورود به صفحه اطلاعات سیستم
+     */
 
     g_systemInfoItem.id =
             MENU_ITEM_ID_SYSTEM_INFO;
@@ -511,13 +529,25 @@ static void Menu_CreateItems(void)
             "System Information";
 
     g_systemInfoItem.type =
-            MENU_ITEM_ACTION;
+            MENU_ITEM_SUBMENU;
+
+
+
+//--------------------------------------------------------------
+
 
     g_systemInfoItem.ownerPage =
             &g_mainMenuPage;
 
+
+//--------------------------------------------------------------------------
+//    g_systemInfoItem.childPage =
+//            NULL;
+
     g_systemInfoItem.childPage =
-            NULL;
+            &g_systemInfoPage;
+
+//--------------------------------------------------------------------------
 
     g_systemInfoItem.next =
             NULL;

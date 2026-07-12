@@ -44,7 +44,8 @@
 #include "buttons.h"
 #include "button_app.h"
 
-
+#include "menu_engine.h"
+#include "menu_types.h"
 
 
 
@@ -140,7 +141,7 @@ int main(void)
    */
   // ── گام ۱: صبر کن تا برق LCD کاملاً پایدار بشه ──
   // Blue Pill خیلی سریع بوت می‌کنه ولی LCD به 100ms+ نیاز داره
-  HAL_Delay(200);
+  HAL_Delay(2000);
 
   // ── گام ۲: راه‌اندازی LCD ──
   // پارامترها: هندل I2C، آدرس، تعداد ستون، تعداد ردیف
@@ -191,7 +192,9 @@ int main(void)
     ButtonApp_Init();
 
 
+    //ADC_App_Init();
 
+   // MenuItems_Init();
 
 
 
@@ -217,7 +220,11 @@ int main(void)
 
 
 
+        //-----------------------------------------
 
+
+
+        //-----------------------------------------
 
     }
 
