@@ -1,75 +1,105 @@
 /******************************************************************************
- * @file    menu_engine.h
- * @brief   Menu Navigation and Control Engine Interface
- *-----------------------------------------------------------------------------
+ *
+ * File Name :
+ *
+ *      menu_engine.h
+ *
+ *------------------------------------------------------------------------------
+ *
  * Project :
+ *
  *      Dual Voltage Monitor
  *
+ *------------------------------------------------------------------------------
+ *
  * MCU :
+ *
  *      STM32F103C8T6
  *
+ *------------------------------------------------------------------------------
+ *
  * Framework :
+ *
  *      STM32 HAL
  *
- *-----------------------------------------------------------------------------
- *
- * Author :
- *      Ali Modami & OpenAI
- *
- *-----------------------------------------------------------------------------
+ *------------------------------------------------------------------------------
  *
  * Description
- * ============================================================================
  *
- * این فایل Interface موتور اصلی منو را تعریف می‌کند.
+ *      Menu Navigation Engine
  *
+ *------------------------------------------------------------------------------
  *
- * فلسفه معماری:
- * ---------------------------------------------------------------------------
+ * Overview
  *
- * Menu Engine فقط مسئول:
+ *      This module implements the navigation layer of the Menu Framework.
  *
- *      - مدیریت Navigation
- *      - نگهداری وضعیت جاری
- *      - پردازش Event های منو
- *      - انتخاب Page و Item فعال
+ *      The Menu Engine is responsible for:
  *
- * می‌باشد.
+ *          • Managing the current page.
+ *          • Managing the selected menu item.
+ *          • Processing navigation events.
+ *          • Entering and leaving submenus.
+ *          • Executing menu callbacks.
+ *          • Managing edit mode.
+ *          • Managing renderer refresh requests.
  *
+ *      The Menu Engine is NOT responsible for:
  *
- * این ماژول هیچ شناختی از:
+ *          • LCD rendering.
+ *          • Button scanning.
+ *          • Menu database creation.
+ *          • Application logic.
  *
- *      LCD
- *      Button GPIO
- *      UART
- *      ADC
- *      Application Logic
+ *------------------------------------------------------------------------------
  *
- * ندارد.
+ * Architecture
  *
+ *                 +----------------------+
+ *                 |     Button Driver    |
+ *                 +----------+-----------+
+ *                            |
+ *                            v
+ *                     MenuEvent_t
+ *                            |
+ *                            v
+ *                 +----------------------+
+ *                 |    Menu Engine       |
+ *                 +----------+-----------+
+ *                            |
+ *             +--------------+--------------+
+ *             |                             |
+ *             v                             v
+ *      menu_items.c                 menu_renderer.c
  *
- * ارتباط با سایر لایه‌ها:
+ *------------------------------------------------------------------------------
  *
+ * Dependencies
  *
- *          Button Layer
- *                |
- *                |
- *                v
- *          Menu Event
- *                |
- *                |
- *                v
- *          Menu Engine
- *                |
- *                |
- *                v
- *          Menu Renderer
+ *      menu_types.h
+ *      menu_items.h
  *
+ *------------------------------------------------------------------------------
+ *
+ * Author :
+ *
+ *      Ali Modami
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Version :
+ *
+ *      2.0.0
  *
  ******************************************************************************/
 
 #ifndef MENU_ENGINE_H
 #define MENU_ENGINE_H
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 
 /******************************************************************************
@@ -78,161 +108,587 @@
  *
  ******************************************************************************/
 
-/*
- * فقط Type های پایه منو از این فایل استفاده می‌شوند.
- *
- * menu_types.h مالک:
- *
- *      MenuItem_t
- *      MenuPage_t
- *      MenuState_t
- *      MenuEvent_t
- *
- * می‌باشد.
- *
- */
+#include <stdbool.h>
 
 #include "menu_types.h"
 
+//#include "menu_items.h"
 
 
 /******************************************************************************
  *
- * Initialization API
+ * Design Notes
+ *
+ ******************************************************************************
+
+The Menu Engine is the runtime controller of the menu system.
+
+Only one MenuPage can be active at any time.
+
+Navigation is performed using the linked-list relationships stored in
+the menu database.
+
+The engine never allocates or destroys menu objects.
+
+Instead, it only keeps pointers to the currently active objects.
+
+This separation allows the menu database to remain completely static
+while the engine maintains the dynamic runtime state.
+
+******************************************************************************/
+/******************************************************************************
+ *
+ * Public Functions
+ *
+ ******************************************************************************/
+
+/******************************************************************************
+ *
+ * Initialization
  *
  ******************************************************************************/
 
 /**
- * @brief Initialize Menu Engine
+ * @brief
+ *      Initialize the Menu Engine.
  *
- * وظایف:
+ * @details
+ *      This function initializes the runtime state of the Menu Engine.
  *
- *      - مقداردهی اولیه Engine
- *      - انتخاب Page اولیه
- *      - انتخاب Item اولیه
- *      - قرار دادن Engine در حالت Navigation
+ *      During initialization:
  *
+ *          • The Main Menu becomes the active page.
+ *          • The first menu item becomes selected.
+ *          • Navigation state is initialized.
+ *          • Refresh flags are generated for the renderer.
+ *
+ * @note
+ *      The menu database must already be initialized by
+ *      Menu_ItemsInit() before calling this function.
  */
+
 void MenuEngine_Init(void);
 
 
 
 /******************************************************************************
  *
- * Event Processing API
+ * Event Processing
  *
  ******************************************************************************/
 
 /**
- * @brief Process Menu Event
+ * @brief
+ *      Process a menu navigation event.
  *
- * دریافت Event از لایه Button Application.
+ * @param event
+ *      Navigation event generated by the Button Driver.
  *
- * مثال:
+ * @details
+ *      This function is the primary entry point of the Menu Engine.
  *
- *      BUTTON_UP
+ *      Supported events:
  *
- * تبدیل شده به:
+ *          • MENU_EVENT_UP
+ *          • MENU_EVENT_DOWN
+ *          • MENU_EVENT_ENTER
+ *          • MENU_EVENT_BACK
  *
- *      MENU_EVENT_UP
+ *      Depending on the current engine state, the event may:
  *
- *
- * Engine فقط Event را پردازش می‌کند
- * و هیچ اطلاعی از منبع Event ندارد.
- *
+ *          • Move the cursor.
+ *          • Enter a submenu.
+ *          • Return to the parent page.
+ *          • Execute a callback.
+ *          • Edit a value.
  */
+
 void MenuEngine_ProcessEvent(MenuEvent_t event);
 
 
 
 /******************************************************************************
  *
- * Current Object Access API
+ * Navigation Information
  *
  ******************************************************************************/
 
 /**
- * @brief Get Current Menu Page
+ * @brief
+ *      Return the currently active menu page.
  *
- * این تابع برای Renderer استفاده خواهد شد.
- *
- * خروجی:
- *
- *      Page فعال فعلی
- *
+ * @return
+ *      Pointer to the active MenuPage object.
  */
-MenuPage_t* MenuEngine_GetCurrentPage(void);
+
+MenuPage_t *MenuEngine_GetCurrentPage(void);
 
 
 
 /**
- * @brief Get Selected Menu Item
+ * @brief
+ *      Return the currently selected menu item.
  *
- * این تابع Item فعال فعلی را برمی‌گرداند.
- *
- * Renderer از این اطلاعات برای نمایش
- * علامت انتخاب استفاده می‌کند.
- *
+ * @return
+ *      Pointer to the active MenuItem object.
  */
-MenuItem_t* MenuEngine_GetSelectedItem(void);
+
+MenuItem_t *MenuEngine_GetSelectedItem(void);
+/******************************************************************************
+ *
+ * Refresh Flags
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Check whether a complete page redraw is required.
+ *
+ * @return
+ *      true  - The renderer shall redraw the complete page.
+ *      false - No complete page refresh is required.
+ */
+
+bool MenuEngine_IsPageChanged(void);
+
+
+
+/**
+ * @brief
+ *      Clear the page refresh request flag.
+ *
+ * @details
+ *      This function is typically called by the renderer after a
+ *      complete page redraw has been performed.
+ */
+
+void MenuEngine_ClearPageChanged(void);
+
+
+
+/**
+ * @brief
+ *      Check whether only the cursor position has changed.
+ *
+ * @return
+ *      true  - Cursor refresh is required.
+ *      false - No cursor update is required.
+ */
+
+bool MenuEngine_IsSelectionChanged(void);
+
+
+
+/**
+ * @brief
+ *      Clear the cursor refresh request flag.
+ *
+ * @details
+ *      The renderer should call this function after updating the
+ *      visual cursor position.
+ */
+
+void MenuEngine_ClearSelectionChanged(void);
 
 
 
 /******************************************************************************
  *
- * State Information API
+ * Engine State
  *
  ******************************************************************************/
 
 /**
- * @brief Get Current Engine State
+ * @brief
+ *      Return the current Menu Engine state.
  *
- * برای ماژول‌های دیگر مانند Renderer
- * یا Application Layer استفاده می‌شود.
- *
+ * @return
+ *      Current MenuState_t value.
  */
+
 MenuState_t MenuEngine_GetState(void);
 
 
 
 /**
- * @brief Get Current Page ID
+ * @brief
+ *      Change the current Menu Engine state.
  *
- * شناسه Page فعال را برمی‌گرداند.
- *
+ * @param state
+ *      New engine state.
  */
-MenuPageId_t MenuEngine_GetCurrentPageId(void);
+
+void MenuEngine_SetState(MenuState_t state);
+
+/******************************************************************************
+ *
+ * Edit Mode
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Check whether the Menu Engine is currently in edit mode.
+ *
+ * @return
+ *      true  - Edit mode is active.
+ *      false - Normal navigation mode is active.
+ */
+
+bool MenuEngine_IsEditMode(void);
 
 
 
 /**
- * @brief Get Selected Item ID
+ * @brief
+ *      Enable or disable edit mode.
  *
- * شناسه Item انتخاب شده را برمی‌گرداند.
+ * @param enable
+ *      true  - Enter edit mode.
+ *      false - Leave edit mode.
  *
+ * @details
+ *      While edit mode is active, navigation events are interpreted
+ *      as value modification requests instead of cursor movement.
  */
-MenuItemId_t MenuEngine_GetSelectedItemId(void);
+
+void MenuEngine_SetEditMode(bool enable);
 
 
 
 /******************************************************************************
  *
- * Control API
+ * Engine Access
  *
  ******************************************************************************/
 
 /**
- * @brief Reset Menu Engine
+ * @brief
+ *      Return a pointer to the Menu Engine runtime object.
  *
- * بازگشت کامل Navigation به وضعیت اولیه:
+ * @return
+ *      Pointer to the internal MenuEngine_t instance.
  *
- *      Main Page
- *      First Item
- *      Navigation State
- *
+ * @note
+ *      The returned object is owned by the Menu Engine module and
+ *      must not be modified directly by application code.
  */
+
+MenuEngine_t *MenuEngine_GetInstance(void);
+
+
+
+/******************************************************************************
+ *
+ * Navigation Control
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Return to the parent page of the current menu.
+ *
+ * @details
+ *      If the current page has a valid parent page, the Menu Engine
+ *      activates the parent page and restores its previously selected
+ *      menu item.
+ *
+ *      If the current page is already the root page, this function
+ *      has no effect.
+ */
+
+void MenuEngine_Back(void);
+/******************************************************************************
+ *
+ * Cursor Navigation
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Move the menu selection to the previous item.
+ *
+ * @details
+ *      If a previous item exists within the current page, it becomes
+ *      the new selected item.
+ *
+ *      If the currently selected item is already the first item,
+ *      the selection remains unchanged.
+ */
+
+void MenuEngine_MoveUp(void);
+
+
+
+/**
+ * @brief
+ *      Move the menu selection to the next item.
+ *
+ * @details
+ *      If a next item exists within the current page, it becomes
+ *      the new selected item.
+ *
+ *      If the currently selected item is already the last item,
+ *      the selection remains unchanged.
+ */
+
+void MenuEngine_MoveDown(void);
+
+
+
+/******************************************************************************
+ *
+ * Item Execution
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Execute the currently selected menu item.
+ *
+ * @details
+ *      The action performed depends on the selected item's type.
+ *
+ *      Typical behaviors include:
+ *
+ *          • Entering a submenu.
+ *          • Executing an application callback.
+ *          • Entering edit mode.
+ *          • Displaying information.
+ */
+
+void MenuEngine_ExecuteSelectedItem(void);
+
+
+
+/******************************************************************************
+ *
+ * Utility Functions
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Request a complete renderer refresh.
+ *
+ * @details
+ *      Sets the internal page refresh flag.
+ *
+ *      The renderer detects this request and redraws the entire page
+ *      during the next update cycle.
+ */
+
+void MenuEngine_RequestPageRefresh(void);
+/**
+ * @brief
+ *      Request a cursor-only refresh.
+ *
+ * @details
+ *      Sets the internal selection refresh flag.
+ *
+ *      The renderer updates only the visual cursor position without
+ *      redrawing the complete page.
+ */
+
+void MenuEngine_RequestSelectionRefresh(void);
+
+
+
+/**
+ * @brief
+ *      Reset the Menu Engine to its initial state.
+ *
+ * @details
+ *      After reset:
+ *
+ *          • The Main Menu becomes active.
+ *          • The first menu item becomes selected.
+ *          • Edit mode is disabled.
+ *          • Navigation state is restored.
+ *          • A complete page refresh is requested.
+ */
+
 void MenuEngine_Reset(void);
 
 
 
+/******************************************************************************
+ *
+ * Information Functions
+ *
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Return the number of items contained in the current page.
+ *
+ * @return
+ *      Total number of menu items in the active page.
+ */
+
+uint8_t MenuEngine_GetItemCount(void);
+
+
+
+/**
+ * @brief
+ *      Check whether the active page is the root page.
+ *
+ * @return
+ *      true  - Current page is the root page.
+ *      false - Current page has a parent page.
+ */
+
+bool MenuEngine_IsRootPage(void);
+
+
+
+/**
+ * @brief
+ *      Return the identifier of the currently selected menu item.
+ *
+ * @return
+ *      MenuItemId_t corresponding to the selected item.
+ */
+
+MenuItemId_t MenuEngine_GetCurrentItemId(void);
+
+
+
+/**
+ * @brief
+ *      Return the identifier of the active page.
+ *
+ * @return
+ *      MenuPageId_t corresponding to the active page.
+ */
+
+MenuPageId_t MenuEngine_GetCurrentPageId(void);
+/******************************************************************************
+ *
+ * Design Rules
+ *
+ ******************************************************************************
+
+The following architectural rules apply to this module.
+
+1.
+    The Menu Engine owns only the runtime state.
+
+2.
+    The Menu Engine never creates or destroys menu objects.
+
+3.
+    All MenuPage and MenuItem objects are permanently allocated inside
+    the database layer.
+
+4.
+    Rendering is completely independent of the navigation logic.
+
+5.
+    Input devices communicate with the Menu Engine only through
+    MenuEvent_t values.
+
+6.
+    The Menu Engine never accesses hardware directly.
+
+7.
+    Application-specific functionality is executed only through
+    callback functions attached to MenuItem objects.
+
+******************************************************************************/
+
+/******************************************************************************
+ *
+ * Thread Safety
+ *
+ ******************************************************************************
+
+The Menu Engine is designed for a single execution context.
+
+Typical execution model:
+
+    Main Loop
+        │
+        ├── Button_Update()
+        │
+        ├── MenuEngine_ProcessEvent()
+        │
+        ├── MenuRenderer_Update()
+        │
+        └── Application_Update()
+
+No internal locking mechanism is implemented.
+
+If an RTOS is introduced in a future version, external synchronization
+shall be provided by the application layer.
+
+******************************************************************************/
+/******************************************************************************
+ *
+ * Module Responsibilities
+ *
+ ******************************************************************************
+
+This module is responsible for:
+
+    • Runtime navigation state.
+
+    • Cursor movement.
+
+    • Page transitions.
+
+    • Submenu navigation.
+
+    • Executing menu callbacks.
+
+    • Edit mode management.
+
+    • Renderer refresh notifications.
+
+This module is NOT responsible for:
+
+    • LCD drawing.
+
+    • Keyboard scanning.
+
+    • Menu database construction.
+
+    • Configuration storage.
+
+    • Business or application logic.
+
+******************************************************************************/
+
+/******************************************************************************
+ *
+ * Revision History
+ *
+ ******************************************************************************
+
+Version 2.0.0
+
+    • Complete architectural redesign.
+
+    • Fully documented public API.
+
+    • Clear separation between database, engine,
+      renderer, and application layers.
+
+    • English documentation standardized throughout
+      the entire module.
+
+******************************************************************************/
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* MENU_ENGINE_H */
+
+
+/******************************************************************************
+ *
+ * End Of File
+ *
+ ******************************************************************************/

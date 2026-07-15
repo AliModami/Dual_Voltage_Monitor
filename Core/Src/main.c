@@ -40,12 +40,12 @@
 
 #include <stdio.h>
 #include <lcd_i2c.h>
+#include <menu_types.h>
 #include "buzzer.h"
 #include "buttons.h"
 #include "button_app.h"
 
 #include "menu_engine.h"
-#include "menu_types.h"
 
 
 
@@ -220,11 +220,44 @@ int main(void)
 
 
 
-        //-----------------------------------------
+        //----------------------------------------- Button Test @ Line 4 -  Begin--------------------------------------
 
+        Button_AppCommand_t cmd;
 
+        if (ButtonApp_GetCommand(&cmd))
+        {
+            switch(cmd)
+            {
+                case BUTTON_CMD_UP:
 
-        //-----------------------------------------
+                    LCD_SetCursor(0,3);
+                    LCD_Print("UP                ");
+                    break;
+
+                case BUTTON_CMD_DOWN:
+
+                    LCD_SetCursor(0,3);
+                    LCD_Print("DOWN              ");
+                    break;
+
+                case BUTTON_CMD_ENTER:
+
+                    LCD_SetCursor(0,3);
+                    LCD_Print("ENTER             ");
+                    break;
+
+                case BUTTON_CMD_BACK:
+
+                    LCD_SetCursor(0,3);
+                    LCD_Print("BACK              ");
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        //-----------------------------------------Button Test @ Line 4 -  End------------------------------------
 
     }
 
