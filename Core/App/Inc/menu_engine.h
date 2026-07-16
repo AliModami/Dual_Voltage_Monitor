@@ -1,8 +1,8 @@
 /******************************************************************************
  *
- * File Name :
+ * @file    menu_engine.h
  *
- *      menu_engine.h
+ * @brief   Runtime Menu Navigation Engine
  *
  *------------------------------------------------------------------------------
  *
@@ -26,70 +26,28 @@
  *
  * Description
  *
- *      Menu Navigation Engine
+ *      Runtime navigation engine of the menu framework.
+ *
+ *      This module owns ONLY the runtime state of the menu system.
+ *
+ *      It never owns menu pages or menu items.
  *
  *------------------------------------------------------------------------------
  *
- * Overview
+ * Responsibilities
  *
- *      This module implements the navigation layer of the Menu Framework.
- *
- *      The Menu Engine is responsible for:
- *
- *          • Managing the current page.
- *          • Managing the selected menu item.
- *          • Processing navigation events.
- *          • Entering and leaving submenus.
- *          • Executing menu callbacks.
- *          • Managing edit mode.
- *          • Managing renderer refresh requests.
- *
- *      The Menu Engine is NOT responsible for:
- *
- *          • LCD rendering.
- *          • Button scanning.
- *          • Menu database creation.
- *          • Application logic.
- *
- *------------------------------------------------------------------------------
- *
- * Architecture
- *
- *                 +----------------------+
- *                 |     Button Driver    |
- *                 +----------+-----------+
- *                            |
- *                            v
- *                     MenuEvent_t
- *                            |
- *                            v
- *                 +----------------------+
- *                 |    Menu Engine       |
- *                 +----------+-----------+
- *                            |
- *             +--------------+--------------+
- *             |                             |
- *             v                             v
- *      menu_items.c                 menu_renderer.c
+ *      • Current page management
+ *      • Current item management
+ *      • Navigation state machine
+ *      • Edit mode control
+ *      • Callback execution
+ *      • Renderer refresh notification
  *
  *------------------------------------------------------------------------------
  *
  * Dependencies
  *
  *      menu_types.h
- *      menu_items.h
- *
- *------------------------------------------------------------------------------
- *
- * Author :
- *
- *      Ali Modami
- *
- *------------------------------------------------------------------------------
- *
- * Version :
- *
- *      2.0.0
  *
  ******************************************************************************/
 
@@ -103,582 +61,400 @@ extern "C"
 
 
 /******************************************************************************
- *
  * Includes
- *
  ******************************************************************************/
 
 #include <stdbool.h>
 
 #include "menu_types.h"
 
-//#include "menu_items.h"
-
 
 /******************************************************************************
- *
- * Design Notes
- *
- ******************************************************************************
-
-The Menu Engine is the runtime controller of the menu system.
-
-Only one MenuPage can be active at any time.
-
-Navigation is performed using the linked-list relationships stored in
-the menu database.
-
-The engine never allocates or destroys menu objects.
-
-Instead, it only keeps pointers to the currently active objects.
-
-This separation allows the menu database to remain completely static
-while the engine maintains the dynamic runtime state.
-
-******************************************************************************/
-/******************************************************************************
- *
- * Public Functions
- *
- ******************************************************************************/
-
-/******************************************************************************
- *
  * Initialization
- *
  ******************************************************************************/
 
 /**
- * @brief
- *      Initialize the Menu Engine.
- *
- * @details
- *      This function initializes the runtime state of the Menu Engine.
- *
- *      During initialization:
- *
- *          • The Main Menu becomes the active page.
- *          • The first menu item becomes selected.
- *          • Navigation state is initialized.
- *          • Refresh flags are generated for the renderer.
- *
- * @note
- *      The menu database must already be initialized by
- *      Menu_ItemsInit() before calling this function.
+ * @brief Initialize Menu Engine runtime.
  */
-
 void MenuEngine_Init(void);
 
 
-
-/******************************************************************************
- *
- * Event Processing
- *
- ******************************************************************************/
-
 /**
- * @brief
- *      Process a menu navigation event.
- *
- * @param event
- *      Navigation event generated by the Button Driver.
- *
- * @details
- *      This function is the primary entry point of the Menu Engine.
- *
- *      Supported events:
- *
- *          • MENU_EVENT_UP
- *          • MENU_EVENT_DOWN
- *          • MENU_EVENT_ENTER
- *          • MENU_EVENT_BACK
- *
- *      Depending on the current engine state, the event may:
- *
- *          • Move the cursor.
- *          • Enter a submenu.
- *          • Return to the parent page.
- *          • Execute a callback.
- *          • Edit a value.
+ * @brief Reset runtime state.
  */
-
-void MenuEngine_ProcessEvent(MenuEvent_t event);
-
-
-
-/******************************************************************************
- *
- * Navigation Information
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Return the currently active menu page.
- *
- * @return
- *      Pointer to the active MenuPage object.
- */
-
-MenuPage_t *MenuEngine_GetCurrentPage(void);
-
-
-
-/**
- * @brief
- *      Return the currently selected menu item.
- *
- * @return
- *      Pointer to the active MenuItem object.
- */
-
-MenuItem_t *MenuEngine_GetSelectedItem(void);
-/******************************************************************************
- *
- * Refresh Flags
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Check whether a complete page redraw is required.
- *
- * @return
- *      true  - The renderer shall redraw the complete page.
- *      false - No complete page refresh is required.
- */
-
-bool MenuEngine_IsPageChanged(void);
-
-
-
-/**
- * @brief
- *      Clear the page refresh request flag.
- *
- * @details
- *      This function is typically called by the renderer after a
- *      complete page redraw has been performed.
- */
-
-void MenuEngine_ClearPageChanged(void);
-
-
-
-/**
- * @brief
- *      Check whether only the cursor position has changed.
- *
- * @return
- *      true  - Cursor refresh is required.
- *      false - No cursor update is required.
- */
-
-bool MenuEngine_IsSelectionChanged(void);
-
-
-
-/**
- * @brief
- *      Clear the cursor refresh request flag.
- *
- * @details
- *      The renderer should call this function after updating the
- *      visual cursor position.
- */
-
-void MenuEngine_ClearSelectionChanged(void);
-
-
-
-/******************************************************************************
- *
- * Engine State
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Return the current Menu Engine state.
- *
- * @return
- *      Current MenuState_t value.
- */
-
-MenuState_t MenuEngine_GetState(void);
-
-
-
-/**
- * @brief
- *      Change the current Menu Engine state.
- *
- * @param state
- *      New engine state.
- */
-
-void MenuEngine_SetState(MenuState_t state);
-
-/******************************************************************************
- *
- * Edit Mode
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Check whether the Menu Engine is currently in edit mode.
- *
- * @return
- *      true  - Edit mode is active.
- *      false - Normal navigation mode is active.
- */
-
-bool MenuEngine_IsEditMode(void);
-
-
-
-/**
- * @brief
- *      Enable or disable edit mode.
- *
- * @param enable
- *      true  - Enter edit mode.
- *      false - Leave edit mode.
- *
- * @details
- *      While edit mode is active, navigation events are interpreted
- *      as value modification requests instead of cursor movement.
- */
-
-void MenuEngine_SetEditMode(bool enable);
-
-
-
-/******************************************************************************
- *
- * Engine Access
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Return a pointer to the Menu Engine runtime object.
- *
- * @return
- *      Pointer to the internal MenuEngine_t instance.
- *
- * @note
- *      The returned object is owned by the Menu Engine module and
- *      must not be modified directly by application code.
- */
-
-MenuEngine_t *MenuEngine_GetInstance(void);
-
-
-
-/******************************************************************************
- *
- * Navigation Control
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Return to the parent page of the current menu.
- *
- * @details
- *      If the current page has a valid parent page, the Menu Engine
- *      activates the parent page and restores its previously selected
- *      menu item.
- *
- *      If the current page is already the root page, this function
- *      has no effect.
- */
-
-void MenuEngine_Back(void);
-/******************************************************************************
- *
- * Cursor Navigation
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Move the menu selection to the previous item.
- *
- * @details
- *      If a previous item exists within the current page, it becomes
- *      the new selected item.
- *
- *      If the currently selected item is already the first item,
- *      the selection remains unchanged.
- */
-
-void MenuEngine_MoveUp(void);
-
-
-
-/**
- * @brief
- *      Move the menu selection to the next item.
- *
- * @details
- *      If a next item exists within the current page, it becomes
- *      the new selected item.
- *
- *      If the currently selected item is already the last item,
- *      the selection remains unchanged.
- */
-
-void MenuEngine_MoveDown(void);
-
-
-
-/******************************************************************************
- *
- * Item Execution
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Execute the currently selected menu item.
- *
- * @details
- *      The action performed depends on the selected item's type.
- *
- *      Typical behaviors include:
- *
- *          • Entering a submenu.
- *          • Executing an application callback.
- *          • Entering edit mode.
- *          • Displaying information.
- */
-
-void MenuEngine_ExecuteSelectedItem(void);
-
-
-
-/******************************************************************************
- *
- * Utility Functions
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Request a complete renderer refresh.
- *
- * @details
- *      Sets the internal page refresh flag.
- *
- *      The renderer detects this request and redraws the entire page
- *      during the next update cycle.
- */
-
-void MenuEngine_RequestPageRefresh(void);
-/**
- * @brief
- *      Request a cursor-only refresh.
- *
- * @details
- *      Sets the internal selection refresh flag.
- *
- *      The renderer updates only the visual cursor position without
- *      redrawing the complete page.
- */
-
-void MenuEngine_RequestSelectionRefresh(void);
-
-
-
-/**
- * @brief
- *      Reset the Menu Engine to its initial state.
- *
- * @details
- *      After reset:
- *
- *          • The Main Menu becomes active.
- *          • The first menu item becomes selected.
- *          • Edit mode is disabled.
- *          • Navigation state is restored.
- *          • A complete page refresh is requested.
- */
-
 void MenuEngine_Reset(void);
 
 
-
 /******************************************************************************
- *
- * Information Functions
- *
+ * Event Processing
  ******************************************************************************/
 
 /**
- * @brief
- *      Return the number of items contained in the current page.
+ * @brief Process one navigation event.
  *
- * @return
- *      Total number of menu items in the active page.
+ * @param event
+ *      Navigation event.
  */
+void MenuEngine_ProcessEvent(MenuEvent_t event);
 
+
+/******************************************************************************
+ * Runtime Access
+ ******************************************************************************/
+
+/**
+ * @brief Return engine instance.
+ */
+MenuEngine_t *MenuEngine_GetInstance(void);
+
+
+/**
+ * @brief Return current page.
+ */
+MenuPage_t *MenuEngine_GetCurrentPage(void);
+
+
+/**
+ * @brief Return selected item.
+ */
+MenuItem_t *MenuEngine_GetSelectedItem(void);
+/******************************************************************************
+ * Navigation
+ ******************************************************************************/
+
+/**
+ * @brief Move selection to previous item.
+ */
+void MenuEngine_MoveUp(void);
+
+
+/**
+ * @brief Move selection to next item.
+ */
+void MenuEngine_MoveDown(void);
+
+
+/**
+ * @brief Execute currently selected item.
+ */
+void MenuEngine_ExecuteSelectedItem(void);
+
+
+/**
+ * @brief Return to parent page.
+ */
+void MenuEngine_Back(void);
+
+
+/******************************************************************************
+ * Engine State
+ ******************************************************************************/
+
+/**
+ * @brief Get current engine state.
+ */
+MenuState_t MenuEngine_GetState(void);
+
+
+/**
+ * @brief Set engine state.
+ *
+ * @param state
+ *      New runtime state.
+ */
+void MenuEngine_SetState(MenuState_t state);
+
+
+/******************************************************************************
+ * Edit Mode
+ ******************************************************************************/
+
+/**
+ * @brief Check whether edit mode is active.
+ *
+ * @retval true
+ * @retval false
+ */
+bool MenuEngine_IsEditMode(void);
+
+
+/**
+ * @brief Enable or disable edit mode.
+ *
+ * @param enable
+ */
+void MenuEngine_SetEditMode(bool enable);
+
+/******************************************************************************
+ * Refresh Management
+ ******************************************************************************/
+
+/**
+ * @brief Request complete page redraw.
+ *
+ * @details
+ * Sets the page refresh flag. The renderer should perform a full
+ * redraw during its next update cycle.
+ */
+void MenuEngine_RequestPageRefresh(void);
+
+
+/**
+ * @brief Request cursor-only refresh.
+ *
+ * @details
+ * Sets the selection refresh flag. The renderer should update only
+ * the cursor without rebuilding the whole page.
+ */
+void MenuEngine_RequestSelectionRefresh(void);
+
+
+/**
+ * @brief Check whether a page refresh is pending.
+ *
+ * @retval true
+ * @retval false
+ */
+bool MenuEngine_IsPageChanged(void);
+
+
+/**
+ * @brief Clear page refresh request.
+ */
+void MenuEngine_ClearPageChanged(void);
+
+
+/**
+ * @brief Check whether selection refresh is pending.
+ *
+ * @retval true
+ * @retval false
+ */
+bool MenuEngine_IsSelectionChanged(void);
+
+
+/**
+ * @brief Clear selection refresh request.
+ */
+void MenuEngine_ClearSelectionChanged(void);
+
+
+/******************************************************************************
+ * Information
+ ******************************************************************************/
+
+/**
+ * @brief Return number of menu items in current page.
+ */
 uint8_t MenuEngine_GetItemCount(void);
 
 
-
 /**
- * @brief
- *      Check whether the active page is the root page.
- *
- * @return
- *      true  - Current page is the root page.
- *      false - Current page has a parent page.
+ * @brief Check whether current page is root page.
  */
-
 bool MenuEngine_IsRootPage(void);
 
 
-
 /**
- * @brief
- *      Return the identifier of the currently selected menu item.
- *
- * @return
- *      MenuItemId_t corresponding to the selected item.
+ * @brief Return current page identifier.
  */
-
-MenuItemId_t MenuEngine_GetCurrentItemId(void);
-
+uint16_t MenuEngine_GetCurrentPageId(void);
 
 
 /**
- * @brief
- *      Return the identifier of the active page.
- *
- * @return
- *      MenuPageId_t corresponding to the active page.
+ * @brief Return current item identifier.
  */
-
-MenuPageId_t MenuEngine_GetCurrentPageId(void);
+uint16_t MenuEngine_GetCurrentItemId(void);
 /******************************************************************************
+ * Engine Synchronization
+ ******************************************************************************/
+
+/**
+ * @brief Synchronize runtime pointers.
  *
- * Design Rules
+ * @details
+ * Ensures that:
  *
- ******************************************************************************
+ *      currentPage
+ *      currentItem
+ *      selectedItem
+ *
+ * remain consistent.
+ *
+ * Normally used internally, but exposed for debugging.
+ */
+void MenuEngine_DebugRefresh(void);
 
-The following architectural rules apply to this module.
 
-1.
-    The Menu Engine owns only the runtime state.
+/**
+ * @brief Periodic runtime update.
+ *
+ * @details
+ * Current implementation is event driven.
+ *
+ * Reserved for future support of:
+ *
+ *      • Timeouts
+ *      • Auto return
+ *      • Message timers
+ *      • Long key processing
+ */
+void MenuEngine_Update(void);
 
-2.
-    The Menu Engine never creates or destroys menu objects.
-
-3.
-    All MenuPage and MenuItem objects are permanently allocated inside
-    the database layer.
-
-4.
-    Rendering is completely independent of the navigation logic.
-
-5.
-    Input devices communicate with the Menu Engine only through
-    MenuEvent_t values.
-
-6.
-    The Menu Engine never accesses hardware directly.
-
-7.
-    Application-specific functionality is executed only through
-    callback functions attached to MenuItem objects.
-
-******************************************************************************/
 
 /******************************************************************************
+ * Runtime Query
+ ******************************************************************************/
+
+/**
+ * @brief Check whether engine has an active page.
  *
+ * @retval true
+ * @retval false
+ */
+bool MenuEngine_HasCurrentPage(void);
+
+
+/**
+ * @brief Check whether engine has a selected item.
+ *
+ * @retval true
+ * @retval false
+ */
+bool MenuEngine_HasSelectedItem(void);
+
+
+/**
+ * @brief Check whether navigation is currently allowed.
+ *
+ * @retval true
+ * @retval false
+ */
+bool MenuEngine_IsNavigationEnabled(void);
+
+
+/******************************************************************************
+ * Compatibility Interface
+ *
+ * These APIs are intentionally preserved because the existing
+ * menu_engine.c implementation and the renderer use them.
+ ******************************************************************************/
+
+/**
+ * @brief Request complete renderer refresh.
+ */
+void MenuEngine_RequestFullRefresh(void);
+
+
+/**
+ * @brief Request cursor-only refresh.
+ */
+void MenuEngine_RequestCursorRefresh(void);
+//******************************************************************************
+ //* Design Rules
+ //*
+// ******************************************************************************
+
+/*
+ * Rule 1
+ *
+ * The Menu Engine owns only the runtime state.
+ *
+ * Menu pages and menu items are permanently allocated
+ * by the database layer.
+
+
+
+
+ * Rule 2
+ *
+ * The Menu Engine never accesses hardware directly.
+ *
+ * All user interaction arrives through MenuEvent_t.
+
+
+
+
+ * Rule 3
+ *
+ * Rendering is completely independent of navigation.
+ *
+ * The engine communicates with the renderer only through
+ * refresh flags.
+
+
+
+
+ * Rule 4
+ *
+ * Application-specific behavior shall be implemented only
+ * through callback functions stored inside MenuItem objects.
+
+
+
+
+ * Rule 5
+ *
+ * Dynamic memory allocation is prohibited.
+
+
+
+
+ * Rule 6
+ *
+ * The engine never modifies the menu database structure.
+ *
+ * It only changes runtime pointers.
+
+
+
+******************************************************************************
  * Thread Safety
  *
  ******************************************************************************
 
-The Menu Engine is designed for a single execution context.
 
-Typical execution model:
-
-    Main Loop
-        │
-        ├── Button_Update()
-        │
-        ├── MenuEngine_ProcessEvent()
-        │
-        ├── MenuRenderer_Update()
-        │
-        └── Application_Update()
-
-No internal locking mechanism is implemented.
-
-If an RTOS is introduced in a future version, external synchronization
-shall be provided by the application layer.
-
-******************************************************************************/
-/******************************************************************************
+ * Current implementation assumes a single execution context.
  *
- * Module Responsibilities
+ * Typical execution order:
  *
- ******************************************************************************
-
-This module is responsible for:
-
-    • Runtime navigation state.
-
-    • Cursor movement.
-
-    • Page transitions.
-
-    • Submenu navigation.
-
-    • Executing menu callbacks.
-
-    • Edit mode management.
-
-    • Renderer refresh notifications.
-
-This module is NOT responsible for:
-
-    • LCD drawing.
-
-    • Keyboard scanning.
-
-    • Menu database construction.
-
-    • Configuration storage.
-
-    • Business or application logic.
-
-******************************************************************************/
-
-/******************************************************************************
+ *      Button_Update()
+ *              |
+ *              v
+ *      MenuEngine_ProcessEvent()
+ *              |
+ *              v
+ *      MenuRenderer_Update()
+ *              |
+ *              v
+ *      Application_Update()
  *
- * Revision History
+ * If an RTOS is introduced later, external synchronization
+ * shall be implemented by the application layer.
+
+
+
+******************************************************************************
+ * Future Extension Notes
  *
  ******************************************************************************
 
-Version 2.0.0
 
-    • Complete architectural redesign.
+ * Reserved extension points:
+ *
+ *      - Timeout processing
+ *      - Message manager
+ *      - Long key detection
+ *      - Encoder support
+ *      - Touch interface
+ *      - Multi-language support
+ *      - Dynamic page generation
+ *      - Animation support
+ *      - RTOS message queue integration
 
-    • Fully documented public API.
-
-    • Clear separation between database, engine,
-      renderer, and application layers.
-
-    • English documentation standardized throughout
-      the entire module.
-
-******************************************************************************/
+******************************************************************************
+ * C++ Compatibility
+ ******************************************************************************/
 
 #ifdef __cplusplus
 }
@@ -687,8 +463,42 @@ Version 2.0.0
 #endif /* MENU_ENGINE_H */
 
 
-/******************************************************************************
+/*
+ * *****************************************************************************
  *
- * End Of File
+ * Revision History
  *
- ******************************************************************************/
+ ******************************************************************************
+
+
+ * Version : 2.0.0
+ *
+ * Architectural Updates
+ *
+ *      • Runtime interface unified.
+ *
+ *      • Public API synchronized with
+ *        menu_engine.c runtime.
+ *
+ *      • Refresh request API standardized.
+ *
+ *      • Edit mode interface unified.
+ *
+ *      • Navigation interface simplified.
+ *
+ *      • Renderer dependency removed.
+ *
+ *      • Hardware independence preserved.
+ *
+ *      • Ready for integration with:
+ *
+ *              menu_types.h
+ *              menu_items.h
+ *              menu_items.c
+ *              menu_renderer.h
+ *              menu_renderer.c
+ *
+
+
+
+*/

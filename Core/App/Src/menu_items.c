@@ -1,8 +1,9 @@
 /******************************************************************************
  *
- * File Name :
+ * @file    menu_items.c
  *
- *      menu_items.c
+ * @brief   Static Menu Database Implementation
+ *          For Dual Voltage Monitor
  *
  *------------------------------------------------------------------------------
  *
@@ -24,1774 +25,1691 @@
  *
  *------------------------------------------------------------------------------
  *
- * Description
- * =============================================================================
+ * Description :
  *
- * Static Menu Database
+ *      This module contains the static menu database.
  *
- * This module implements the complete static database used by the Menu
- * Framework.
+ *      Responsibilities:
  *
- * Every Menu Page and every Menu Item is statically allocated inside this file.
+ *          - Create menu pages.
+ *          - Create menu items.
+ *          - Build menu hierarchy.
+ *          - Provide menu object access.
  *
- * The Menu Engine never creates or destroys menu objects.
+ *      This module does not handle:
  *
- * Instead, it navigates through the objects defined here by using pointers.
+ *          - LCD rendering.
+ *          - Button processing.
+ *          - Navigation algorithm.
+ *          - Application data processing.
  *
- *------------------------------------------------------------------------------
- *
- * Responsibilities
- * =============================================================================
- *
- * This module is responsible for:
- *
- *      • Creating all menu pages
- *      • Creating all menu items
- *      • Building page hierarchy
- *      • Building linked-list relationships
- *      • Attaching callback functions
- *      • Providing the root page
- *
- *------------------------------------------------------------------------------
- *
- * This module is NOT responsible for:
- *
- *      • Navigation logic
- *      • LCD rendering
- *      • Button processing
- *      • Application execution
- *      • Runtime state management
- *
- *------------------------------------------------------------------------------
- *
- * Architecture
- * =============================================================================
- *
- *                 menu_types.h
- *                        │
- *                        ▼
- *                 menu_items.h
- *                        │
- *                        ▼
- *                 menu_items.c
- *                 (Database Layer)
- *                        │
- *                        ▼
- *                 menu_engine.c
- *               (Navigation Layer)
- *                        │
- *                        ▼
- *               menu_renderer.c
- *                 (Display Layer)
- *
- *------------------------------------------------------------------------------
- *
- * Design Philosophy
- * =============================================================================
- *
- * The Menu Database is completely static.
- *
- * Every object is allocated during compilation.
- *
- * No dynamic memory allocation is used anywhere in the framework.
- *
- * This approach provides:
- *
- *      • Predictable memory usage
- *      • Fast execution
- *      • Zero heap fragmentation
- *      • High reliability
- *      • Easy debugging
- *
- *------------------------------------------------------------------------------
- *
- * Author :
- *
- *      Ali Modami
- *
- *------------------------------------------------------------------------------
- *
- * Version :
- *
- *      2.0.0
- *
- ******************************************************************************/
+ *****************************************************************************/
+
 
 /******************************************************************************
  * Includes
- ******************************************************************************/
+ *****************************************************************************/
 
 #include "menu_items.h"
 
-#include <stddef.h>
 
-#include "menu_actions.h"
 
 /******************************************************************************
- *
+ * Private Constants
+ *****************************************************************************/
+
+#define MENU_ITEMS_VERSION_STRING    "2.0.2"
+
+
+
+/******************************************************************************
+ * Static Menu Pages
+ *****************************************************************************/
+
+static MenuPage_t g_mainMenuPage;
+
+static MenuPage_t g_liveMonitorPage;
+
+static MenuPage_t g_streamSettingsPage;
+
+static MenuPage_t g_alarmSettingsPage;
+
+static MenuPage_t g_calibrationPage;
+
+static MenuPage_t g_serviceModePage;
+
+static MenuPage_t g_systemInfoPage;
+
+
+
+/******************************************************************************
+ * Static Menu Items
+ *****************************************************************************/
+
+/* Main menu */
+
+static MenuItem_t g_itemLiveMonitor;
+
+static MenuItem_t g_itemStartStream;
+
+static MenuItem_t g_itemStreamSettings;
+
+static MenuItem_t g_itemAlarmSettings;
+
+static MenuItem_t g_itemCalibration;
+
+static MenuItem_t g_itemServiceMode;
+
+static MenuItem_t g_itemSystemInfo;
+
+
+
+/* Stream settings */
+
+static MenuItem_t g_itemBaudRate;
+
+static MenuItem_t g_itemSampleRate;
+
+
+
+/* Alarm settings */
+
+static MenuItem_t g_itemAlarmEnable;
+
+static MenuItem_t g_itemLowVoltageLimit;
+
+static MenuItem_t g_itemHighVoltageLimit;
+
+
+
+/* Calibration */
+
+static MenuItem_t g_itemInputCalibration;
+
+static MenuItem_t g_itemOutputCalibration;
+
+
+
+/* Service */
+
+static MenuItem_t g_itemButtonTest;
+
+static MenuItem_t g_itemBuzzerTest;
+
+static MenuItem_t g_itemLcdTest;
+
+static MenuItem_t g_itemFactoryCalibration;
+
+static MenuItem_t g_itemRestoreDefault;
+
+
+
+/* System information */
+
+static MenuItem_t g_itemFirmwareVersion;
+
+static MenuItem_t g_itemBuildInformation;
+
+
+
+/******************************************************************************
  * Private Function Prototypes
- *
- ******************************************************************************/
-
-/*
- * The following functions are internal to the Database Layer.
- *
- * They are intentionally declared as static to prevent access from
- * outside this translation unit.
- */
-
-/**
- * @brief
- *      Create all menu pages.
- *
- * @details
- *      Initializes every MenuPage object and establishes the parent
- *      page relationships used by the navigation engine.
- */
-static void Menu_CreatePages(void);
+ *****************************************************************************/
 
 
-/**
- * @brief
- *      Create all menu items.
- *
- * @details
- *      Initializes every MenuItem object including identifiers,
- *      titles, types, owner pages and child page references.
- *
- *      Linked-list relationships are not created here.
- */
-static void Menu_CreateItems(void);
+static void MenuItems_InitPages(void);
 
 
-/**
- * @brief
- *      Build all linked-list relationships.
- *
- * @details
- *      Connects every MenuItem using the next and previous pointers.
- *
- *      Also initializes the firstItem, lastItem and selectedItem
- *      members of each MenuPage.
- */
-static void Menu_LinkItems(void);
+static void MenuItems_InitItems(void);
 
 
-/**
- * @brief
- *      Attach callback functions.
- *
- * @details
- *      Associates executable menu items with their corresponding
- *      application callback functions.
- */
-static void Menu_AttachCallbacks(void);
+static void MenuItems_InitMainItems(void);
 
 
-/******************************************************************************
- *
- * Global Menu Page Objects
- *
- * Every page exists for the entire lifetime of the application.
- *
- * These objects form the static hierarchy of the menu database.
- *
- ******************************************************************************/
-
-/*
- * Root page.
- */
-MenuPage_t g_mainMenuPage;
+static void MenuItems_InitStreamItems(void);
 
 
-/*
- * UART stream configuration page.
- */
-MenuPage_t g_streamSettingsPage;
+static void MenuItems_InitAlarmItems(void);
 
 
-/*
- * Alarm configuration page.
- */
-MenuPage_t g_alarmSettingsPage;
+static void MenuItems_InitCalibrationItems(void);
 
 
-/*
- * ADC calibration page.
- */
-MenuPage_t g_calibrationPage;
+static void MenuItems_InitServiceItems(void);
 
 
-/*
- * Hardware diagnostics and service page.
- */
-MenuPage_t g_serviceModePage;
+static void MenuItems_InitSystemInfoItems(void);
 
 
-/*
- * Firmware and hardware information page.
- */
-MenuPage_t g_systemInfoPage;
 
-/******************************************************************************
- *
- * Global Menu Item Objects
- *
- * Every MenuItem is statically allocated.
- *
- * The Menu Engine navigates through these objects using the linked-list
- * relationships established during database initialization.
- *
- * No MenuItem is ever created or destroyed at runtime.
- *
- ******************************************************************************/
-
-/******************************************************************************
- * Main Menu Items
- ******************************************************************************/
-
-/*
- * Opens the real-time voltage monitoring screen.
- */
-MenuItem_t g_liveMonitorItem;
+static void MenuItems_BuildMainTree(void);
 
 
-/*
- * Starts UART data streaming.
- */
-MenuItem_t g_startStreamItem;
+static void MenuItems_BuildStreamTree(void);
 
 
-/*
- * Opens the Stream Settings submenu.
- */
-MenuItem_t g_streamSettingsItem;
+static void MenuItems_BuildAlarmTree(void);
 
 
-/*
- * Opens the Alarm Settings submenu.
- */
-MenuItem_t g_alarmSettingsItem;
+static void MenuItems_BuildCalibrationTree(void);
 
 
-/*
- * Opens the Calibration submenu.
- */
-MenuItem_t g_calibrationItem;
+static void MenuItems_BuildServiceTree(void);
 
 
-/*
- * Opens the Service Mode submenu.
- */
-MenuItem_t g_serviceModeItem;
+static void MenuItems_BuildSystemInfoTree(void);
 
 
-/*
- * Opens the System Information page.
- */
-MenuItem_t g_systemInfoItem;
+
+static void MenuItems_ClearItem(
+        MenuItem_t *item);
+
+
+
+static void MenuItems_ClearPage(
+        MenuPage_t *page);
+
+
+
+static void MenuItems_LinkItems(
+        MenuItem_t *first,
+        MenuItem_t *second);
+
+
+
+static void MenuItems_AssignPageItems(
+        MenuPage_t *page,
+        MenuItem_t *firstItem,
+        uint16_t count);
+
 
 
 /******************************************************************************
- * Stream Settings Page Items
- ******************************************************************************/
-
-/*
- * UART baud rate configuration.
- */
-MenuItem_t g_baudRateItem;
-
-
-/*
- * ADC sampling interval configuration.
- */
-MenuItem_t g_sampleRateItem;
-
-
+ * End Of Part 1/6
+ *****************************************************************************/
 /******************************************************************************
- * Alarm Settings Page Items
- ******************************************************************************/
-
-/*
- * Alarm enable/disable option.
- */
-MenuItem_t g_alarmEnableItem;
+* Page Helper Functions
+*****************************************************************************/
 
 
-/*
- * Low voltage threshold configuration.
- */
-MenuItem_t g_lowVoltageItem;
-
-
-/*
- * High voltage threshold configuration.
- */
-MenuItem_t g_highVoltageItem;
-
-
-/*
- * Alarm operating mode selection.
- */
-MenuItem_t g_alarmModeItem;
-/******************************************************************************
- *
- * Calibration Page Items
- *
- ******************************************************************************/
-
-/*
- * Input voltage calibration procedure.
- */
-MenuItem_t g_inputCalibrationItem;
-
-
-/*
- * Output voltage calibration procedure.
- */
-MenuItem_t g_outputCalibrationItem;
-
-
-/*
- * Restore factory calibration values.
- */
-MenuItem_t g_factoryCalibrationItem;
-
-
-/******************************************************************************
- *
- * Service Mode Page Items
- *
- ******************************************************************************/
-
-/*
- * Push-button diagnostic test.
- */
-MenuItem_t g_buttonTestItem;
-
-
-/*
- * Buzzer diagnostic test.
- */
-MenuItem_t g_buzzerTestItem;
-
-
-/*
- * LCD diagnostic test.
- */
-MenuItem_t g_lcdTestItem;
-
-
-/*
- * Restore all configuration parameters to factory defaults.
- */
-MenuItem_t g_restoreDefaultItem;
-
-
-/******************************************************************************
- *
- * Menu_CreatePages()
- *
- ******************************************************************************/
-
-/**
- * @brief
- *      Create and initialize every MenuPage object.
- *
- * @details
- *      This function initializes the complete page hierarchy used by
- *      the Menu Framework.
- *
- *      During this stage:
- *
- *          • Page identifiers are assigned.
- *          • Page titles are assigned.
- *          • Parent page relationships are established.
- *          • Navigation pointers are initialized.
- *          • Runtime pointers remain NULL until the database is linked.
- *
- * @note
- *      Linked-list construction is performed later by
- *      Menu_LinkItems().
- */
-
-static void Menu_CreatePages(void)
+static void MenuItems_ClearPage(
+       MenuPage_t *page)
 {
 
-    /**********************************************************************
-     *
-     * Main Menu Page
-     *
-     **********************************************************************/
-
-    g_mainMenuPage.id =
-            MENU_PAGE_MAIN;
-
-    g_mainMenuPage.title =
-            "Main Menu";
-
-    g_mainMenuPage.firstItem =
-            NULL;
-
-    g_mainMenuPage.lastItem =
-            NULL;
-
-    g_mainMenuPage.selectedItem =
-            NULL;
-
-    /*
-     * Root page has no parent.
-     */
-    g_mainMenuPage.parentPage =
-            NULL;
-
-    g_mainMenuPage.itemCount =
-            0;
+   if(page == NULL)
+   {
+       return;
+   }
 
 
-
-    /**********************************************************************
-     *
-     * Stream Settings Page
-     *
-     **********************************************************************/
-
-    g_streamSettingsPage.id =
-            MENU_PAGE_STREAM;
-
-    g_streamSettingsPage.title =
-            "Stream Settings";
-
-    g_streamSettingsPage.firstItem =
-            NULL;
-
-    g_streamSettingsPage.lastItem =
-            NULL;
-
-    g_streamSettingsPage.selectedItem =
-            NULL;
-
-    g_streamSettingsPage.parentPage =
-            &g_mainMenuPage;
-
-    g_streamSettingsPage.itemCount =
-            0;
-    /**********************************************************************
-     *
-     * Alarm Settings Page
-     *
-     **********************************************************************/
-
-    g_alarmSettingsPage.id =
-            MENU_PAGE_ALARM;
-
-    g_alarmSettingsPage.title =
-            "Alarm Settings";
-
-    g_alarmSettingsPage.firstItem =
-            NULL;
-
-    g_alarmSettingsPage.lastItem =
-            NULL;
-
-    g_alarmSettingsPage.selectedItem =
-            NULL;
-
-    g_alarmSettingsPage.parentPage =
-            &g_mainMenuPage;
-
-    g_alarmSettingsPage.itemCount =
-            0;
+   page->id =
+           0U;
 
 
-
-    /**********************************************************************
-     *
-     * Calibration Page
-     *
-     **********************************************************************/
-
-    g_calibrationPage.id =
-            MENU_PAGE_CALIBRATION;
-
-    g_calibrationPage.title =
-            "Calibration";
-
-    g_calibrationPage.firstItem =
-            NULL;
-
-    g_calibrationPage.lastItem =
-            NULL;
-
-    g_calibrationPage.selectedItem =
-            NULL;
-
-    g_calibrationPage.parentPage =
-            &g_mainMenuPage;
-
-    g_calibrationPage.itemCount =
-            0;
+   page->title =
+           NULL;
 
 
-
-    /**********************************************************************
-     *
-     * Service Mode Page
-     *
-     **********************************************************************/
-
-    g_serviceModePage.id =
-            MENU_PAGE_SERVICE;
-
-    g_serviceModePage.title =
-            "Service Mode";
-
-    g_serviceModePage.firstItem =
-            NULL;
-
-    g_serviceModePage.lastItem =
-            NULL;
-
-    g_serviceModePage.selectedItem =
-            NULL;
-
-    g_serviceModePage.parentPage =
-            &g_mainMenuPage;
-
-    g_serviceModePage.itemCount =
-            0;
+   page->type =
+           MENU_PAGE_STANDARD;
 
 
+   page->firstItem =
+           NULL;
 
-    /**********************************************************************
-     *
-     * System Information Page
-     *
-     **********************************************************************/
 
-    g_systemInfoPage.id =
-            MENU_PAGE_SYSTEM_INFO;
+   page->lastItem =
+           NULL;
 
-    g_systemInfoPage.title =
-            "System Information";
 
-    g_systemInfoPage.firstItem =
-            NULL;
+   page->selectedItem =
+           NULL;
 
-    g_systemInfoPage.lastItem =
-            NULL;
 
-    g_systemInfoPage.selectedItem =
-            NULL;
+   page->itemCount =
+           0U;
 
-    g_systemInfoPage.parentPage =
-            &g_mainMenuPage;
 
-    g_systemInfoPage.itemCount =
-            0;
+   page->selectedIndex =
+           0U;
+
+
+   page->visibleRows =
+           MENU_DEFAULT_VISIBLE_ROWS;
+
+
+   page->parentPage =
+           NULL;
+
+
+   page->previousPage =
+           NULL;
+
+
+   page->onEnter =
+           NULL;
+
+
+   page->onExit =
+           NULL;
+
+
+   page->redrawRequired =
+           true;
+
+
+   page->userData =
+           NULL;
 
 }
+
+
+
+
 /******************************************************************************
- *
- * Menu_CreateItems()
- *
- ******************************************************************************/
+* Page Initialization
+*****************************************************************************/
 
-/**
- * @brief
- *      Create every MenuItem object used by the menu database.
- *
- * @details
- *      This function initializes the static properties of each menu item.
- *
- *      The following members are configured:
- *
- *          • Item identifier
- *          • Display title
- *          • Item type
- *          • Owner page
- *          • Child page relationship
- *          • Navigation pointers (initialized to NULL)
- *          • Callback pointer (initialized to NULL)
- *
- *      Linked-list relationships are intentionally not created here.
- *      They are established later by Menu_LinkItems().
- */
 
-static void Menu_CreateItems(void)
+static void MenuItems_InitPages(void)
 {
 
-    /**********************************************************************
-     *
-     * Main Menu Items
-     *
-     **********************************************************************/
+   MenuItems_ClearPage(
+           &g_mainMenuPage);
 
 
-    /*
-     * Live Monitor
-     *
-     * Opens the real-time voltage monitoring screen.
-     */
+   MenuItems_ClearPage(
+           &g_liveMonitorPage);
 
-    g_liveMonitorItem.id =
-            MENU_ITEM_ID_LIVE_MONITOR;
 
-    g_liveMonitorItem.title =
+   MenuItems_ClearPage(
+           &g_streamSettingsPage);
+
+
+   MenuItems_ClearPage(
+           &g_alarmSettingsPage);
+
+
+   MenuItems_ClearPage(
+           &g_calibrationPage);
+
+
+   MenuItems_ClearPage(
+           &g_serviceModePage);
+
+
+   MenuItems_ClearPage(
+           &g_systemInfoPage);
+
+
+
+   /*
+    * Main Menu
+    */
+
+   g_mainMenuPage.id =
+           MENU_PAGE_MAIN;
+
+
+   g_mainMenuPage.title =
+           "Main Menu";
+
+
+   g_mainMenuPage.type =
+           MENU_PAGE_STANDARD;
+
+
+
+   /*
+    * Live Monitor
+    */
+
+   g_liveMonitorPage.id =
+           MENU_PAGE_LIVE_MONITOR;
+
+
+   g_liveMonitorPage.title =
+           "Live Monitor";
+
+
+   g_liveMonitorPage.type =
+           MENU_PAGE_MONITOR;
+
+
+   g_liveMonitorPage.parentPage =
+           &g_mainMenuPage;
+
+
+
+   /*
+    * Stream Settings
+    */
+
+   g_streamSettingsPage.id =
+           MENU_PAGE_STREAM_SETTINGS;
+
+
+   g_streamSettingsPage.title =
+           "Stream Settings";
+
+
+   g_streamSettingsPage.type =
+           MENU_PAGE_SETTINGS;
+
+
+   g_streamSettingsPage.parentPage =
+           &g_mainMenuPage;
+
+
+
+   /*
+    * Alarm Settings
+    */
+
+   g_alarmSettingsPage.id =
+           MENU_PAGE_ALARM_SETTINGS;
+
+
+   g_alarmSettingsPage.title =
+           "Alarm Settings";
+
+
+   g_alarmSettingsPage.type =
+           MENU_PAGE_SETTINGS;
+
+
+   g_alarmSettingsPage.parentPage =
+           &g_mainMenuPage;
+
+
+
+   /*
+    * Calibration
+    */
+
+   g_calibrationPage.id =
+           MENU_PAGE_CALIBRATION;
+
+
+   g_calibrationPage.title =
+           "Calibration";
+
+
+   g_calibrationPage.type =
+           MENU_PAGE_SETTINGS;
+
+
+   g_calibrationPage.parentPage =
+           &g_mainMenuPage;
+
+
+
+   /*
+    * Service Mode
+    */
+
+   g_serviceModePage.id =
+           MENU_PAGE_SERVICE_MODE;
+
+
+   g_serviceModePage.title =
+           "Service Mode";
+
+
+   g_serviceModePage.type =
+           MENU_PAGE_SERVICE;
+
+
+   g_serviceModePage.parentPage =
+           &g_mainMenuPage;
+
+
+
+   /*
+    * System Information
+    *
+    * Correct enum name from menu_types.h:
+    *
+    * MENU_PAGE_INFORMATION
+    */
+
+   g_systemInfoPage.id =
+           MENU_PAGE_SYSTEM_INFO;
+
+
+   g_systemInfoPage.title =
+           "System Info";
+
+
+   g_systemInfoPage.type =
+           MENU_PAGE_INFORMATION;
+
+
+   g_systemInfoPage.parentPage =
+           &g_mainMenuPage;
+
+}
+
+
+
+/******************************************************************************
+* End Of Part 2/6
+*****************************************************************************/
+/******************************************************************************
+ * Menu Item Helper Functions
+ *****************************************************************************/
+
+
+static void MenuItems_ClearItem(
+        MenuItem_t *item)
+{
+
+    if(item == NULL)
+    {
+        return;
+    }
+
+
+    item->id =
+            MENU_ITEM_NONE;
+
+
+    item->title =
+            NULL;
+
+
+    item->description =
+            NULL;
+
+
+    item->type =
+            MENU_ITEM_NORMAL;
+
+
+    item->visibility =
+            MENU_VISIBLE;
+
+
+    item->parent =
+            NULL;
+
+
+    item->child =
+            NULL;
+
+
+    item->next =
+            NULL;
+
+
+    item->previous =
+            NULL;
+
+
+    item->childPage =
+            NULL;
+
+
+    item->data =
+            NULL;
+
+
+    item->dataType =
+            MENU_EDIT_TYPE_NONE;
+
+
+    item->getter =
+            NULL;
+
+
+    item->setter =
+            NULL;
+
+
+    item->validator =
+            NULL;
+
+
+    item->onEnter =
+            NULL;
+
+
+    item->onSelect =
+            NULL;
+
+
+    item->onExit =
+            NULL;
+
+
+    item->enterCallback =
+            NULL;
+
+
+    item->userData =
+            NULL;
+
+}
+
+
+
+/******************************************************************************
+ * Main Menu Item Initialization
+ *****************************************************************************/
+
+
+static void MenuItems_InitMainItems(void)
+{
+
+
+    MenuItems_ClearItem(
+            &g_itemLiveMonitor);
+
+
+    g_itemLiveMonitor.id =
+            MENU_ITEM_LIVE_MONITOR;
+
+
+    g_itemLiveMonitor.title =
             "Live Monitor";
 
-    g_liveMonitorItem.type =
-            MENU_ITEM_ACTION;
 
-    g_liveMonitorItem.ownerPage =
-            &g_mainMenuPage;
+    g_itemLiveMonitor.description =
+            "Display voltage values";
 
-    g_liveMonitorItem.childPage =
-            NULL;
 
-    g_liveMonitorItem.next =
-            NULL;
+    g_itemLiveMonitor.type =
+            MENU_ITEM_SUBMENU;
 
-    g_liveMonitorItem.previous =
-            NULL;
 
-    g_liveMonitorItem.enterCallback =
-            NULL;
+    g_itemLiveMonitor.childPage =
+            &g_liveMonitorPage;
 
 
 
-    /*
-     * Start Stream
-     *
-     * Starts UART data streaming.
-     */
 
-    g_startStreamItem.id =
-            MENU_ITEM_ID_START_STREAM;
+    MenuItems_ClearItem(
+            &g_itemStartStream);
 
-    g_startStreamItem.title =
+
+    g_itemStartStream.id =
+            MENU_ITEM_START_STREAM;
+
+
+    g_itemStartStream.title =
             "Start Stream";
 
-    g_startStreamItem.type =
+
+    g_itemStartStream.description =
+            "UART voltage logging";
+
+
+    g_itemStartStream.type =
             MENU_ITEM_ACTION;
 
-    g_startStreamItem.ownerPage =
-            &g_mainMenuPage;
 
-    g_startStreamItem.childPage =
-            NULL;
 
-    g_startStreamItem.next =
-            NULL;
 
-    g_startStreamItem.previous =
-            NULL;
+    MenuItems_ClearItem(
+            &g_itemStreamSettings);
 
-    g_startStreamItem.enterCallback =
-            NULL;
-    /*
-     * Stream Settings
-     *
-     * Opens the Stream Settings submenu.
-     */
 
-    g_streamSettingsItem.id =
-            MENU_ITEM_ID_STREAM_SETTINGS;
+    g_itemStreamSettings.id =
+            MENU_ITEM_STREAM_SETTINGS;
 
-    g_streamSettingsItem.title =
+
+    g_itemStreamSettings.title =
             "Stream Settings";
 
-    g_streamSettingsItem.type =
+
+    g_itemStreamSettings.description =
+            "UART configuration";
+
+
+    g_itemStreamSettings.type =
             MENU_ITEM_SUBMENU;
 
-    g_streamSettingsItem.ownerPage =
-            &g_mainMenuPage;
 
-    g_streamSettingsItem.childPage =
+    g_itemStreamSettings.childPage =
             &g_streamSettingsPage;
 
-    g_streamSettingsItem.next =
-            NULL;
-
-    g_streamSettingsItem.previous =
-            NULL;
-
-    g_streamSettingsItem.enterCallback =
-            NULL;
 
 
 
-    /*
-     * Alarm Settings
-     *
-     * Opens the Alarm Settings submenu.
-     */
+    MenuItems_ClearItem(
+            &g_itemAlarmSettings);
 
-    g_alarmSettingsItem.id =
-            MENU_ITEM_ID_ALARM_SETTINGS;
 
-    g_alarmSettingsItem.title =
+    g_itemAlarmSettings.id =
+            MENU_ITEM_ALARM_SETTINGS;
+
+
+    g_itemAlarmSettings.title =
             "Alarm Settings";
 
-    g_alarmSettingsItem.type =
+
+    g_itemAlarmSettings.description =
+            "Voltage alarm setup";
+
+
+    g_itemAlarmSettings.type =
             MENU_ITEM_SUBMENU;
 
-    g_alarmSettingsItem.ownerPage =
-            &g_mainMenuPage;
 
-    g_alarmSettingsItem.childPage =
+    g_itemAlarmSettings.childPage =
             &g_alarmSettingsPage;
 
-    g_alarmSettingsItem.next =
-            NULL;
-
-    g_alarmSettingsItem.previous =
-            NULL;
-
-    g_alarmSettingsItem.enterCallback =
-            NULL;
 
 
 
-    /*
-     * Calibration
-     *
-     * Opens the calibration submenu.
-     */
+    MenuItems_ClearItem(
+            &g_itemCalibration);
 
-    g_calibrationItem.id =
-            MENU_ITEM_ID_CALIBRATION;
 
-    g_calibrationItem.title =
+    g_itemCalibration.id =
+            MENU_ITEM_CALIBRATION;
+
+
+    g_itemCalibration.title =
             "Calibration";
 
-    g_calibrationItem.type =
+
+    g_itemCalibration.description =
+            "Voltage calibration";
+
+
+    g_itemCalibration.type =
             MENU_ITEM_SUBMENU;
 
-    g_calibrationItem.ownerPage =
-            &g_mainMenuPage;
 
-    g_calibrationItem.childPage =
+    g_itemCalibration.childPage =
             &g_calibrationPage;
 
-    g_calibrationItem.next =
-            NULL;
-
-    g_calibrationItem.previous =
-            NULL;
-
-    g_calibrationItem.enterCallback =
-            NULL;
 
 
 
-    /*
-     * Service Mode
-     *
-     * Opens the hardware diagnostic submenu.
-     */
+    MenuItems_ClearItem(
+            &g_itemServiceMode);
 
-    g_serviceModeItem.id =
-            MENU_ITEM_ID_SERVICE_MODE;
 
-    g_serviceModeItem.title =
+    g_itemServiceMode.id =
+            MENU_ITEM_SERVICE_MODE;
+
+
+    g_itemServiceMode.title =
             "Service Mode";
 
-    g_serviceModeItem.type =
+
+    g_itemServiceMode.description =
+            "Diagnostic functions";
+
+
+    g_itemServiceMode.type =
             MENU_ITEM_SUBMENU;
 
-    g_serviceModeItem.ownerPage =
-            &g_mainMenuPage;
 
-    g_serviceModeItem.childPage =
+    g_itemServiceMode.childPage =
             &g_serviceModePage;
 
-    g_serviceModeItem.next =
-            NULL;
 
-    g_serviceModeItem.previous =
-            NULL;
 
-    g_serviceModeItem.enterCallback =
-            NULL;
-    /*
-     * System Information
-     *
-     * Opens the System Information page.
-     */
 
-    g_systemInfoItem.id =
-            MENU_ITEM_ID_SYSTEM_INFO;
+    MenuItems_ClearItem(
+            &g_itemSystemInfo);
 
-    g_systemInfoItem.title =
-            "System Information";
 
-    g_systemInfoItem.type =
+    g_itemSystemInfo.id =
+            MENU_ITEM_SYSTEM_INFO;
+
+
+    g_itemSystemInfo.title =
+            "System Info";
+
+
+    g_itemSystemInfo.description =
+            "Firmware information";
+
+
+    g_itemSystemInfo.type =
             MENU_ITEM_SUBMENU;
 
-    g_systemInfoItem.ownerPage =
-            &g_mainMenuPage;
 
-    g_systemInfoItem.childPage =
+    g_itemSystemInfo.childPage =
             &g_systemInfoPage;
 
-    g_systemInfoItem.next =
-            NULL;
-
-    g_systemInfoItem.previous =
-            NULL;
-
-    g_systemInfoItem.enterCallback =
-            NULL;
+}
 
 
 
-    /**********************************************************************
-     *
-     * Stream Settings Page Items
-     *
-     **********************************************************************/
+/******************************************************************************
+ * Stream Settings Item Initialization
+ *****************************************************************************/
 
 
-    /*
-     * Baud Rate
-     *
-     * Configures the UART communication speed.
-     */
+static void MenuItems_InitStreamItems(void)
+{
 
-    g_baudRateItem.id =
-            MENU_ITEM_ID_BAUD_RATE;
 
-    g_baudRateItem.title =
+    MenuItems_ClearItem(
+            &g_itemBaudRate);
+
+
+    g_itemBaudRate.id =
+            MENU_ITEM_BAUD_RATE;
+
+
+    g_itemBaudRate.title =
             "Baud Rate";
 
-    g_baudRateItem.type =
-            MENU_ITEM_VALUE;
 
-    g_baudRateItem.ownerPage =
-            &g_streamSettingsPage;
+    g_itemBaudRate.description =
+            "UART communication speed";
 
-    g_baudRateItem.childPage =
-            NULL;
 
-    g_baudRateItem.next =
-            NULL;
+    g_itemBaudRate.type =
+            MENU_ITEM_EDIT;
 
-    g_baudRateItem.previous =
-            NULL;
 
-    g_baudRateItem.enterCallback =
-            NULL;
+    g_itemBaudRate.dataType =
+            MENU_EDIT_UINT32;
 
 
 
-    /*
-     * Sample Rate
-     *
-     * Configures the sampling interval used by the measurement engine.
-     */
 
-    g_sampleRateItem.id =
-            MENU_ITEM_ID_SAMPLE_RATE;
+    MenuItems_ClearItem(
+            &g_itemSampleRate);
 
-    g_sampleRateItem.title =
+
+    g_itemSampleRate.id =
+            MENU_ITEM_SAMPLE_RATE;
+
+
+    g_itemSampleRate.title =
             "Sample Rate";
 
-    g_sampleRateItem.type =
-            MENU_ITEM_VALUE;
 
-    g_sampleRateItem.ownerPage =
-            &g_streamSettingsPage;
-
-    g_sampleRateItem.childPage =
-            NULL;
-
-    g_sampleRateItem.next =
-            NULL;
-
-    g_sampleRateItem.previous =
-            NULL;
-
-    g_sampleRateItem.enterCallback =
-            NULL;
-    /**********************************************************************
-     *
-     * Alarm Settings Page Items
-     *
-     **********************************************************************/
+    g_itemSampleRate.description =
+            "ADC sampling interval";
 
 
-    /*
-     * Alarm Enable
-     *
-     * Enables or disables the voltage alarm system.
-     */
+    g_itemSampleRate.type =
+            MENU_ITEM_EDIT;
 
-    g_alarmEnableItem.id =
-            MENU_ITEM_ID_ALARM_ENABLE;
 
-    g_alarmEnableItem.title =
+    g_itemSampleRate.dataType =
+            MENU_EDIT_UINT32;
+
+}
+
+
+
+/******************************************************************************
+ * Alarm Settings Item Initialization
+ *****************************************************************************/
+
+
+static void MenuItems_InitAlarmItems(void)
+{
+
+
+    MenuItems_ClearItem(
+            &g_itemAlarmEnable);
+
+
+    g_itemAlarmEnable.id =
+            MENU_ITEM_ALARM_ENABLE;
+
+
+    g_itemAlarmEnable.title =
             "Alarm Enable";
 
-    g_alarmEnableItem.type =
-            MENU_ITEM_VALUE;
 
-    g_alarmEnableItem.ownerPage =
-            &g_alarmSettingsPage;
+    g_itemAlarmEnable.description =
+            "Enable voltage alarm";
 
-    g_alarmEnableItem.childPage =
-            NULL;
 
-    g_alarmEnableItem.next =
-            NULL;
+    g_itemAlarmEnable.type =
+            MENU_ITEM_EDIT;
 
-    g_alarmEnableItem.previous =
-            NULL;
 
-    g_alarmEnableItem.enterCallback =
-            NULL;
+    g_itemAlarmEnable.dataType =
+            MENU_EDIT_BOOL;
 
 
 
-    /*
-     * Low Voltage
-     *
-     * Configures the low voltage alarm threshold.
-     */
 
-    g_lowVoltageItem.id =
-            MENU_ITEM_ID_LOW_VOLTAGE;
+    MenuItems_ClearItem(
+            &g_itemLowVoltageLimit);
 
-    g_lowVoltageItem.title =
+
+    g_itemLowVoltageLimit.id =
+            MENU_ITEM_LOW_VOLTAGE_LIMIT;
+
+
+    g_itemLowVoltageLimit.title =
             "Low Voltage";
 
-    g_lowVoltageItem.type =
-            MENU_ITEM_VALUE;
 
-    g_lowVoltageItem.ownerPage =
-            &g_alarmSettingsPage;
+    g_itemLowVoltageLimit.description =
+            "Low alarm threshold";
 
-    g_lowVoltageItem.childPage =
-            NULL;
 
-    g_lowVoltageItem.next =
-            NULL;
+    g_itemLowVoltageLimit.type =
+            MENU_ITEM_EDIT;
 
-    g_lowVoltageItem.previous =
-            NULL;
 
-    g_lowVoltageItem.enterCallback =
-            NULL;
+    g_itemLowVoltageLimit.dataType =
+            MENU_EDIT_UINT16;
 
 
 
-    /*
-     * High Voltage
-     *
-     * Configures the high voltage alarm threshold.
-     */
 
-    g_highVoltageItem.id =
-            MENU_ITEM_ID_HIGH_VOLTAGE;
+    MenuItems_ClearItem(
+            &g_itemHighVoltageLimit);
 
-    g_highVoltageItem.title =
+
+    g_itemHighVoltageLimit.id =
+            MENU_ITEM_HIGH_VOLTAGE_LIMIT;
+
+
+    g_itemHighVoltageLimit.title =
             "High Voltage";
 
-    g_highVoltageItem.type =
-            MENU_ITEM_VALUE;
 
-    g_highVoltageItem.ownerPage =
-            &g_alarmSettingsPage;
+    g_itemHighVoltageLimit.description =
+            "High alarm threshold";
 
-    g_highVoltageItem.childPage =
-            NULL;
 
-    g_highVoltageItem.next =
-            NULL;
+    g_itemHighVoltageLimit.type =
+            MENU_ITEM_EDIT;
 
-    g_highVoltageItem.previous =
-            NULL;
 
-    g_highVoltageItem.enterCallback =
-            NULL;
+    g_itemHighVoltageLimit.dataType =
+            MENU_EDIT_UINT16;
+
+}
 
 
 
-    /*
-     * Alarm Mode
-     *
-     * Selects the operating mode of the alarm system.
-     *
-     * Supported modes:
-     *
-     *      • Once
-     *      • Repeat
-     */
-
-    g_alarmModeItem.id =
-            MENU_ITEM_ID_ALARM_MODE;
-
-    g_alarmModeItem.title =
-            "Alarm Mode";
-
-    g_alarmModeItem.type =
-            MENU_ITEM_VALUE;
-
-    g_alarmModeItem.ownerPage =
-            &g_alarmSettingsPage;
-
-    g_alarmModeItem.childPage =
-            NULL;
-
-    g_alarmModeItem.next =
-            NULL;
-
-    g_alarmModeItem.previous =
-            NULL;
-
-    g_alarmModeItem.enterCallback =
-            NULL;
-
-    /**********************************************************************
-     *
-     * Calibration Page Items
-     *
-     **********************************************************************/
+/******************************************************************************
+ * End Of Part 3/6
+ *****************************************************************************/
+/******************************************************************************
+ * Calibration Item Initialization
+ *****************************************************************************/
 
 
-    /*
-     * Input Calibration
-     *
-     * Starts the calibration procedure for the input voltage
-     * measurement channel.
-     */
+static void MenuItems_InitCalibrationItems(void)
+{
 
-    g_inputCalibrationItem.id =
-            MENU_ITEM_ID_INPUT_CALIBRATION;
+    MenuItems_ClearItem(
+            &g_itemInputCalibration);
 
-    g_inputCalibrationItem.title =
-            "Input Calibration";
 
-    g_inputCalibrationItem.type =
-            MENU_ITEM_ACTION;
+    g_itemInputCalibration.id =
+            MENU_ITEM_INPUT_CALIBRATION;
 
-    g_inputCalibrationItem.ownerPage =
-            &g_calibrationPage;
 
-    g_inputCalibrationItem.childPage =
-            NULL;
+    g_itemInputCalibration.title =
+            "Input Calibrate";
 
-    g_inputCalibrationItem.next =
-            NULL;
 
-    g_inputCalibrationItem.previous =
-            NULL;
+    g_itemInputCalibration.description =
+            "Adjust input measurement";
 
-    g_inputCalibrationItem.enterCallback =
-            NULL;
+
+    g_itemInputCalibration.type =
+            MENU_ITEM_EDIT;
+
+
+    g_itemInputCalibration.dataType =
+            MENU_EDIT_INT32;
 
 
 
-    /*
-     * Output Calibration
-     *
-     * Starts the calibration procedure for the output voltage
-     * measurement channel.
-     */
 
-    g_outputCalibrationItem.id =
-            MENU_ITEM_ID_OUTPUT_CALIBRATION;
+    MenuItems_ClearItem(
+            &g_itemOutputCalibration);
 
-    g_outputCalibrationItem.title =
-            "Output Calibration";
 
-    g_outputCalibrationItem.type =
-            MENU_ITEM_ACTION;
+    g_itemOutputCalibration.id =
+            MENU_ITEM_OUTPUT_CALIBRATION;
 
-    g_outputCalibrationItem.ownerPage =
-            &g_calibrationPage;
 
-    g_outputCalibrationItem.childPage =
-            NULL;
+    g_itemOutputCalibration.title =
+            "Output Calibrate";
 
-    g_outputCalibrationItem.next =
-            NULL;
 
-    g_outputCalibrationItem.previous =
-            NULL;
+    g_itemOutputCalibration.description =
+            "Adjust output measurement";
 
-    g_outputCalibrationItem.enterCallback =
-            NULL;
+
+    g_itemOutputCalibration.type =
+            MENU_ITEM_EDIT;
+
+
+    g_itemOutputCalibration.dataType =
+            MENU_EDIT_INT32;
+
+}
 
 
 
-    /*
-     * Factory Calibration
-     *
-     * Restores the factory calibration constants.
-     */
-
-    g_factoryCalibrationItem.id =
-            MENU_ITEM_ID_FACTORY_CALIBRATION;
-
-    g_factoryCalibrationItem.title =
-            "Factory Calibration";
-
-    g_factoryCalibrationItem.type =
-            MENU_ITEM_ACTION;
-
-    g_factoryCalibrationItem.ownerPage =
-            &g_calibrationPage;
-
-    g_factoryCalibrationItem.childPage =
-            NULL;
-
-    g_factoryCalibrationItem.next =
-            NULL;
-
-    g_factoryCalibrationItem.previous =
-            NULL;
-
-    g_factoryCalibrationItem.enterCallback =
-            NULL;
-    /**********************************************************************
-     *
-     * Service Mode Page Items
-     *
-     **********************************************************************/
+/******************************************************************************
+ * Service Mode Item Initialization
+ *****************************************************************************/
 
 
-    /*
-     * Button Test
-     *
-     * Starts the push-button diagnostic routine.
-     */
+static void MenuItems_InitServiceItems(void)
+{
 
-    g_buttonTestItem.id =
-            MENU_ITEM_ID_BUTTON_TEST;
+    MenuItems_ClearItem(
+            &g_itemButtonTest);
 
-    g_buttonTestItem.title =
+
+    g_itemButtonTest.id =
+            MENU_ITEM_BUTTON_TEST;
+
+
+    g_itemButtonTest.title =
             "Button Test";
 
-    g_buttonTestItem.type =
+
+    g_itemButtonTest.description =
+            "Test input buttons";
+
+
+    g_itemButtonTest.type =
             MENU_ITEM_ACTION;
 
-    g_buttonTestItem.ownerPage =
-            &g_serviceModePage;
-
-    g_buttonTestItem.childPage =
-            NULL;
-
-    g_buttonTestItem.next =
-            NULL;
-
-    g_buttonTestItem.previous =
-            NULL;
-
-    g_buttonTestItem.enterCallback =
-            NULL;
 
 
 
-    /*
-     * Buzzer Test
-     *
-     * Starts the buzzer diagnostic routine.
-     */
+    MenuItems_ClearItem(
+            &g_itemBuzzerTest);
 
-    g_buzzerTestItem.id =
-            MENU_ITEM_ID_BUZZER_TEST;
 
-    g_buzzerTestItem.title =
+    g_itemBuzzerTest.id =
+            MENU_ITEM_BUZZER_TEST;
+
+
+    g_itemBuzzerTest.title =
             "Buzzer Test";
 
-    g_buzzerTestItem.type =
+
+    g_itemBuzzerTest.description =
+            "Test alarm buzzer";
+
+
+    g_itemBuzzerTest.type =
             MENU_ITEM_ACTION;
 
-    g_buzzerTestItem.ownerPage =
-            &g_serviceModePage;
-
-    g_buzzerTestItem.childPage =
-            NULL;
-
-    g_buzzerTestItem.next =
-            NULL;
-
-    g_buzzerTestItem.previous =
-            NULL;
-
-    g_buzzerTestItem.enterCallback =
-            NULL;
 
 
 
-    /*
-     * LCD Test
-     *
-     * Starts the LCD diagnostic routine.
-     */
+    MenuItems_ClearItem(
+            &g_itemLcdTest);
 
-    g_lcdTestItem.id =
-            MENU_ITEM_ID_LCD_TEST;
 
-    g_lcdTestItem.title =
+    g_itemLcdTest.id =
+            MENU_ITEM_LCD_TEST;
+
+
+    g_itemLcdTest.title =
             "LCD Test";
 
-    g_lcdTestItem.type =
+
+    g_itemLcdTest.description =
+            "Test display module";
+
+
+    g_itemLcdTest.type =
             MENU_ITEM_ACTION;
 
-    g_lcdTestItem.ownerPage =
-            &g_serviceModePage;
-
-    g_lcdTestItem.childPage =
-            NULL;
-
-    g_lcdTestItem.next =
-            NULL;
-
-    g_lcdTestItem.previous =
-            NULL;
-
-    g_lcdTestItem.enterCallback =
-            NULL;
 
 
 
-    /*
-     * Restore Default
-     *
-     * Restores all user configuration parameters to their
-     * factory default values.
-     */
+    MenuItems_ClearItem(
+            &g_itemFactoryCalibration);
 
-    g_restoreDefaultItem.id =
-            MENU_ITEM_ID_RESTORE_DEFAULT;
 
-    g_restoreDefaultItem.title =
+    g_itemFactoryCalibration.id =
+            MENU_ITEM_FACTORY_CALIBRATION;
+
+
+    g_itemFactoryCalibration.title =
+            "Factory Calibration";
+
+
+    g_itemFactoryCalibration.description =
+            "Factory adjustment mode";
+
+
+    g_itemFactoryCalibration.type =
+            MENU_ITEM_ACTION;
+
+
+
+
+    MenuItems_ClearItem(
+            &g_itemRestoreDefault);
+
+
+    g_itemRestoreDefault.id =
+            MENU_ITEM_RESTORE_DEFAULT;
+
+
+    g_itemRestoreDefault.title =
             "Restore Default";
 
-    g_restoreDefaultItem.type =
+
+    g_itemRestoreDefault.description =
+            "Reset configuration";
+
+
+    g_itemRestoreDefault.type =
             MENU_ITEM_ACTION;
 
-    g_restoreDefaultItem.ownerPage =
-            &g_serviceModePage;
-
-    g_restoreDefaultItem.childPage =
-            NULL;
-
-    g_restoreDefaultItem.next =
-            NULL;
-
-    g_restoreDefaultItem.previous =
-            NULL;
-
-    g_restoreDefaultItem.enterCallback =
-            NULL;
-
 }
+
+
+
 /******************************************************************************
- *
- * Menu_LinkItems()
- *
- ******************************************************************************/
+ * System Information Item Initialization
+ *****************************************************************************/
 
-/**
- * @brief
- *      Build all linked-list relationships between MenuItem objects.
- *
- * @details
- *      This function constructs the navigation database used by the
- *      Menu Engine.
- *
- *      During this stage:
- *
- *          • next pointers are assigned.
- *          • previous pointers are assigned.
- *          • firstItem is assigned.
- *          • lastItem is assigned.
- *          • itemCount is calculated.
- *
- *      After this function completes, every page owns a complete
- *      doubly-linked list of MenuItem objects.
- *
- * @note
- *      The Menu Engine performs navigation exclusively through these
- *      linked-list pointers.
- */
 
-static void Menu_LinkItems(void)
+static void MenuItems_InitSystemInfoItems(void)
 {
 
-    /**********************************************************************
-     *
-     * Main Menu
-     *
-     **********************************************************************/
+    MenuItems_ClearItem(
+            &g_itemFirmwareVersion);
 
-    g_mainMenuPage.firstItem =
-            &g_liveMonitorItem;
 
+    g_itemFirmwareVersion.id =
+            MENU_ITEM_FIRMWARE_VERSION;
 
-    g_liveMonitorItem.next =
-            &g_startStreamItem;
 
+    g_itemFirmwareVersion.title =
+            "Firmware Version";
 
-    g_startStreamItem.previous =
-            &g_liveMonitorItem;
 
+    g_itemFirmwareVersion.description =
+            "Display firmware version";
 
-    g_startStreamItem.next =
-            &g_streamSettingsItem;
 
+    g_itemFirmwareVersion.type =
+            MENU_ITEM_INFO;
 
-    g_streamSettingsItem.previous =
-            &g_startStreamItem;
 
 
-    g_streamSettingsItem.next =
-            &g_alarmSettingsItem;
 
+    MenuItems_ClearItem(
+            &g_itemBuildInformation);
 
-    g_alarmSettingsItem.previous =
-            &g_streamSettingsItem;
 
+    g_itemBuildInformation.id =
+            MENU_ITEM_BUILD_INFORMATION;
 
-    g_alarmSettingsItem.next =
-            &g_calibrationItem;
 
+    g_itemBuildInformation.title =
+            "Build Information";
 
-    g_calibrationItem.previous =
-            &g_alarmSettingsItem;
 
+    g_itemBuildInformation.description =
+            "Compiler information";
 
-    g_calibrationItem.next =
-            &g_serviceModeItem;
 
-
-    g_serviceModeItem.previous =
-            &g_calibrationItem;
-
-
-    g_serviceModeItem.next =
-            &g_systemInfoItem;
-
-
-    g_systemInfoItem.previous =
-            &g_serviceModeItem;
-
-
-    g_systemInfoItem.next =
-            NULL;
-
-
-    g_mainMenuPage.lastItem =
-            &g_systemInfoItem;
-
-
-    g_mainMenuPage.itemCount =
-            7;
-
-
-
-    /**********************************************************************
-     *
-     * Stream Settings Page
-     *
-     **********************************************************************/
-
-    g_streamSettingsPage.firstItem =
-            &g_baudRateItem;
-
-
-    g_baudRateItem.next =
-            &g_sampleRateItem;
-
-
-    g_sampleRateItem.previous =
-            &g_baudRateItem;
-
-
-    g_sampleRateItem.next =
-            NULL;
-
-
-    g_streamSettingsPage.lastItem =
-            &g_sampleRateItem;
-
-
-    g_streamSettingsPage.itemCount =
-            2;
-
-    /**********************************************************************
-     *
-     * Alarm Settings Page
-     *
-     **********************************************************************/
-
-    g_alarmSettingsPage.firstItem =
-            &g_alarmEnableItem;
-
-
-    g_alarmEnableItem.next =
-            &g_lowVoltageItem;
-
-
-    g_lowVoltageItem.previous =
-            &g_alarmEnableItem;
-
-
-    g_lowVoltageItem.next =
-            &g_highVoltageItem;
-
-
-    g_highVoltageItem.previous =
-            &g_lowVoltageItem;
-
-
-    g_highVoltageItem.next =
-            &g_alarmModeItem;
-
-
-    g_alarmModeItem.previous =
-            &g_highVoltageItem;
-
-
-    g_alarmModeItem.next =
-            NULL;
-
-
-    g_alarmSettingsPage.lastItem =
-            &g_alarmModeItem;
-
-
-    g_alarmSettingsPage.itemCount =
-            4;
-
-
-
-    /**********************************************************************
-     *
-     * Calibration Page
-     *
-     **********************************************************************/
-
-    g_calibrationPage.firstItem =
-            &g_inputCalibrationItem;
-
-
-    g_inputCalibrationItem.next =
-            &g_outputCalibrationItem;
-
-
-    g_outputCalibrationItem.previous =
-            &g_inputCalibrationItem;
-
-
-    g_outputCalibrationItem.next =
-            &g_factoryCalibrationItem;
-
-
-    g_factoryCalibrationItem.previous =
-            &g_outputCalibrationItem;
-
-
-    g_factoryCalibrationItem.next =
-            NULL;
-
-
-    g_calibrationPage.lastItem =
-            &g_factoryCalibrationItem;
-
-
-    g_calibrationPage.itemCount =
-            3;
-
-
-
-    /**********************************************************************
-     *
-     * Service Mode Page
-     *
-     **********************************************************************/
-
-    g_serviceModePage.firstItem =
-            &g_buttonTestItem;
-
-
-    g_buttonTestItem.next =
-            &g_buzzerTestItem;
-
-
-    g_buzzerTestItem.previous =
-            &g_buttonTestItem;
-
-
-    g_buzzerTestItem.next =
-            &g_lcdTestItem;
-
-
-    g_lcdTestItem.previous =
-            &g_buzzerTestItem;
-
-
-    g_lcdTestItem.next =
-            &g_restoreDefaultItem;
-
-
-    g_restoreDefaultItem.previous =
-            &g_lcdTestItem;
-
-
-    g_restoreDefaultItem.next =
-            NULL;
-
-
-    g_serviceModePage.lastItem =
-            &g_restoreDefaultItem;
-
-
-    g_serviceModePage.itemCount =
-            4;
-
-    /**********************************************************************
-     *
-     * Default Selected Items
-     *
-     **********************************************************************
-     *
-     * Each page begins with its first menu item selected.
-     *
-     * The Menu Engine uses these pointers as the initial cursor
-     * position whenever a page becomes active.
-     *
-     **********************************************************************/
-
-    g_mainMenuPage.selectedItem =
-            g_mainMenuPage.firstItem;
-
-
-    g_streamSettingsPage.selectedItem =
-            g_streamSettingsPage.firstItem;
-
-
-    g_alarmSettingsPage.selectedItem =
-            g_alarmSettingsPage.firstItem;
-
-
-    g_calibrationPage.selectedItem =
-            g_calibrationPage.firstItem;
-
-
-    g_serviceModePage.selectedItem =
-            g_serviceModePage.firstItem;
-
-
-    /*
-     * The System Information page currently contains no navigable items.
-     *
-     * Keep the selected item pointer cleared until items are added
-     * in a future revision.
-     */
-    g_systemInfoPage.selectedItem =
-            NULL;
+    g_itemBuildInformation.type =
+            MENU_ITEM_INFO;
 
 }
 
 
+
 /******************************************************************************
- *
- * Menu_AttachCallbacks()
- *
- ******************************************************************************/
+ * Master Item Initialization
+ *****************************************************************************/
 
-/**
- * @brief
- *      Attach callback functions to executable menu items.
- *
- * @details
- *      This function connects Action-type menu items with their
- *      corresponding application callback functions.
- *
- *      The Menu Engine simply invokes the callback assigned to the
- *      selected MenuItem.
- *
- *      Callback execution logic is intentionally separated from the
- *      menu database to keep responsibilities independent.
- */
 
-static void Menu_AttachCallbacks(void)
+static void MenuItems_InitItems(void)
 {
 
-    /**********************************************************************
-     *
-     * Main Menu Actions
-     *
-     **********************************************************************/
-
-    /*
-     * Live Monitor
-     */
-    g_liveMonitorItem.enterCallback =
-            Menu_Action_LiveMonitor;
+    MenuItems_InitMainItems();
 
 
-
-    /*
-     * Start Stream
-     */
-    g_startStreamItem.enterCallback =
-            Menu_Action_StartStream;
+    MenuItems_InitStreamItems();
 
 
-
-    /*
-     * System Information
-     */
-    g_systemInfoItem.enterCallback =
-            Menu_Action_SystemInfo;
-
-    /**********************************************************************
-     *
-     * Calibration Actions
-     *
-     **********************************************************************/
-
-    /*
-     * Input Calibration
-     */
-    g_inputCalibrationItem.enterCallback =
-            Menu_Action_Calibration;
+    MenuItems_InitAlarmItems();
 
 
-    /*
-     * Output Calibration
-     */
-    g_outputCalibrationItem.enterCallback =
-            Menu_Action_Calibration;
+    MenuItems_InitCalibrationItems();
 
 
-    /*
-     * Factory Calibration
-     */
-    g_factoryCalibrationItem.enterCallback =
-            Menu_Action_Calibration;
+    MenuItems_InitServiceItems();
 
 
-
-    /**********************************************************************
-     *
-     * Service Mode Actions
-     *
-     **********************************************************************/
-
-    /*
-     * Button Test
-     */
-    g_buttonTestItem.enterCallback =
-            Menu_Action_ServiceMode;
-
-
-    /*
-     * Buzzer Test
-     */
-    g_buzzerTestItem.enterCallback =
-            Menu_Action_ServiceMode;
-
-
-    /*
-     * LCD Test
-     */
-    g_lcdTestItem.enterCallback =
-            Menu_Action_ServiceMode;
-
-
-    /*
-     * Restore Default
-     */
-    g_restoreDefaultItem.enterCallback =
-            Menu_Action_ServiceMode;
+    MenuItems_InitSystemInfoItems();
 
 }
 
 
+
 /******************************************************************************
- *
- * Menu_ItemsInit()
- *
- ******************************************************************************/
+ * End Of Part 4/6
+ *****************************************************************************/
+/******************************************************************************
+ * Menu Tree Helper Functions
+ *****************************************************************************/
 
-/**
- * @brief
- *      Initialize the complete static menu database.
- *
- * @details
- *      The initialization sequence is intentionally fixed.
- *
- *      Initialization order:
- *
- *          1. Create all pages.
- *          2. Create all menu items.
- *          3. Build linked-list relationships.
- *          4. Attach callback functions.
- *
- *      After successful completion of this function, the menu database
- *      is fully constructed and ready for use by the Menu Engine.
- */
 
-void Menu_ItemsInit(void)
+static void MenuItems_LinkItems(
+        MenuItem_t *first,
+        MenuItem_t *second)
 {
 
-    /*
-     * Create all menu pages.
-     */
-    Menu_CreatePages();
+    if((first == NULL) ||
+       (second == NULL))
+    {
+        return;
+    }
 
 
-    /*
-     * Create every menu item.
-     */
-    Menu_CreateItems();
+    first->next =
+            second;
 
 
-    /*
-     * Build navigation links.
-     */
-    Menu_LinkItems();
-
-
-    /*
-     * Attach callback functions.
-     */
-    Menu_AttachCallbacks();
+    second->previous =
+            first;
 
 }
 
+
+
+
+static void MenuItems_AssignPageItems(
+        MenuPage_t *page,
+        MenuItem_t *firstItem,
+        uint16_t count)
+{
+
+    if(page == NULL)
+    {
+        return;
+    }
+
+
+    page->firstItem =
+            firstItem;
+
+
+    page->itemCount =
+            count;
+
+
+    page->selectedItem =
+            firstItem;
+
+
+    page->selectedIndex =
+            0U;
+
+}
+
+
+
 /******************************************************************************
- *
- * Menu_GetMainPage()
- *
- ******************************************************************************/
+ * Main Menu Tree
+ *****************************************************************************/
 
-/**
- * @brief
- *      Return the root page of the menu database.
- *
- * @return
- *      Pointer to the Main Menu page.
- *
- * @details
- *      This function provides the standard entry point into the
- *      static menu database.
- *
- *      The Menu Engine calls this function during initialization
- *      and whenever a complete navigation reset is required.
- *
- * @note
- *      Ownership of the returned object remains inside the
- *      menu database. The caller must not modify or free it.
- */
 
-MenuPage_t *Menu_GetMainPage(void)
+static void MenuItems_BuildMainTree(void)
+{
+
+    MenuItems_LinkItems(
+            &g_itemLiveMonitor,
+            &g_itemStartStream);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemStartStream,
+            &g_itemStreamSettings);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemStreamSettings,
+            &g_itemAlarmSettings);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemAlarmSettings,
+            &g_itemCalibration);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemCalibration,
+            &g_itemServiceMode);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemServiceMode,
+            &g_itemSystemInfo);
+
+
+
+    MenuItems_AssignPageItems(
+            &g_mainMenuPage,
+            &g_itemLiveMonitor,
+            7U);
+
+}
+
+
+
+/******************************************************************************
+ * Stream Settings Tree
+ *****************************************************************************/
+
+
+static void MenuItems_BuildStreamTree(void)
+{
+
+    MenuItems_LinkItems(
+            &g_itemBaudRate,
+            &g_itemSampleRate);
+
+
+
+    MenuItems_AssignPageItems(
+            &g_streamSettingsPage,
+            &g_itemBaudRate,
+            2U);
+
+}
+
+
+
+/******************************************************************************
+ * Alarm Settings Tree
+ *****************************************************************************/
+
+
+static void MenuItems_BuildAlarmTree(void)
+{
+
+    MenuItems_LinkItems(
+            &g_itemAlarmEnable,
+            &g_itemLowVoltageLimit);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemLowVoltageLimit,
+            &g_itemHighVoltageLimit);
+
+
+
+    MenuItems_AssignPageItems(
+            &g_alarmSettingsPage,
+            &g_itemAlarmEnable,
+            3U);
+
+}
+
+
+
+/******************************************************************************
+ * Calibration Tree
+ *****************************************************************************/
+
+
+static void MenuItems_BuildCalibrationTree(void)
+{
+
+    MenuItems_LinkItems(
+            &g_itemInputCalibration,
+            &g_itemOutputCalibration);
+
+
+
+    MenuItems_AssignPageItems(
+            &g_calibrationPage,
+            &g_itemInputCalibration,
+            2U);
+
+}
+
+
+
+/******************************************************************************
+ * Service Mode Tree
+ *****************************************************************************/
+
+
+static void MenuItems_BuildServiceTree(void)
+{
+
+    MenuItems_LinkItems(
+            &g_itemButtonTest,
+            &g_itemBuzzerTest);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemBuzzerTest,
+            &g_itemLcdTest);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemLcdTest,
+            &g_itemFactoryCalibration);
+
+
+
+    MenuItems_LinkItems(
+            &g_itemFactoryCalibration,
+            &g_itemRestoreDefault);
+
+
+
+    MenuItems_AssignPageItems(
+            &g_serviceModePage,
+            &g_itemButtonTest,
+            5U);
+
+}
+
+
+
+/******************************************************************************
+ * System Information Tree
+ *****************************************************************************/
+
+
+static void MenuItems_BuildSystemInfoTree(void)
+{
+
+    MenuItems_LinkItems(
+            &g_itemFirmwareVersion,
+            &g_itemBuildInformation);
+
+
+
+    MenuItems_AssignPageItems(
+            &g_systemInfoPage,
+            &g_itemFirmwareVersion,
+            2U);
+
+}
+
+
+
+/******************************************************************************
+ * Public Initialization
+ *****************************************************************************/
+
+
+MenuResult_t MenuItems_Init(void)
+{
+
+    MenuItems_InitPages();
+
+
+    MenuItems_InitItems();
+
+
+    MenuItems_BuildMainTree();
+
+
+    MenuItems_BuildStreamTree();
+
+
+    MenuItems_BuildAlarmTree();
+
+
+    MenuItems_BuildCalibrationTree();
+
+
+    MenuItems_BuildServiceTree();
+
+
+    MenuItems_BuildSystemInfoTree();
+
+
+    return MENU_RESULT_OK;
+
+}
+
+
+
+/******************************************************************************
+ * End Of Part 5/6
+ *****************************************************************************/
+/******************************************************************************
+ * Public Page Access Function
+ *****************************************************************************/
+
+
+MenuPage_t *MenuItems_GetPage(
+        MenuPageId_t id)
+{
+
+    switch(id)
+    {
+
+        case MENU_PAGE_MAIN:
+
+            return &g_mainMenuPage;
+
+
+
+        case MENU_PAGE_LIVE_MONITOR:
+
+            return &g_liveMonitorPage;
+
+
+
+        case MENU_PAGE_STREAM_SETTINGS:
+
+            return &g_streamSettingsPage;
+
+
+
+        case MENU_PAGE_ALARM_SETTINGS:
+
+            return &g_alarmSettingsPage;
+
+
+
+        case MENU_PAGE_CALIBRATION:
+
+            return &g_calibrationPage;
+
+
+
+        case MENU_PAGE_SERVICE_MODE:
+
+            return &g_serviceModePage;
+
+
+
+        case MENU_PAGE_SYSTEM_INFO:
+
+            return &g_systemInfoPage;
+
+
+
+        default:
+
+            return NULL;
+
+    }
+
+}
+
+
+
+/******************************************************************************
+ * Public Item Access Function
+ *****************************************************************************/
+
+
+MenuItem_t *MenuItems_GetItem(
+        MenuItemId_t id)
+{
+
+    switch(id)
+    {
+
+        case MENU_ITEM_LIVE_MONITOR:
+
+            return &g_itemLiveMonitor;
+
+
+
+        case MENU_ITEM_START_STREAM:
+
+            return &g_itemStartStream;
+
+
+
+        case MENU_ITEM_STREAM_SETTINGS:
+
+            return &g_itemStreamSettings;
+
+
+
+        case MENU_ITEM_ALARM_SETTINGS:
+
+            return &g_itemAlarmSettings;
+
+
+
+        case MENU_ITEM_CALIBRATION:
+
+            return &g_itemCalibration;
+
+
+
+        case MENU_ITEM_SERVICE_MODE:
+
+            return &g_itemServiceMode;
+
+
+
+        case MENU_ITEM_SYSTEM_INFO:
+
+            return &g_itemSystemInfo;
+
+
+
+        case MENU_ITEM_BAUD_RATE:
+
+            return &g_itemBaudRate;
+
+
+
+        case MENU_ITEM_SAMPLE_RATE:
+
+            return &g_itemSampleRate;
+
+
+
+        case MENU_ITEM_ALARM_ENABLE:
+
+            return &g_itemAlarmEnable;
+
+
+
+        case MENU_ITEM_LOW_VOLTAGE_LIMIT:
+
+            return &g_itemLowVoltageLimit;
+
+
+
+        case MENU_ITEM_HIGH_VOLTAGE_LIMIT:
+
+            return &g_itemHighVoltageLimit;
+
+
+
+        case MENU_ITEM_INPUT_CALIBRATION:
+
+            return &g_itemInputCalibration;
+
+
+
+        case MENU_ITEM_OUTPUT_CALIBRATION:
+
+            return &g_itemOutputCalibration;
+
+
+
+        case MENU_ITEM_BUTTON_TEST:
+
+            return &g_itemButtonTest;
+
+
+
+        case MENU_ITEM_BUZZER_TEST:
+
+            return &g_itemBuzzerTest;
+
+
+
+        case MENU_ITEM_LCD_TEST:
+
+            return &g_itemLcdTest;
+
+
+
+        case MENU_ITEM_FACTORY_CALIBRATION:
+
+            return &g_itemFactoryCalibration;
+
+
+
+        case MENU_ITEM_RESTORE_DEFAULT:
+
+            return &g_itemRestoreDefault;
+
+
+
+        case MENU_ITEM_FIRMWARE_VERSION:
+
+            return &g_itemFirmwareVersion;
+
+
+
+        case MENU_ITEM_BUILD_INFORMATION:
+
+            return &g_itemBuildInformation;
+
+
+
+        default:
+
+            return NULL;
+
+    }
+
+}
+
+
+
+/******************************************************************************
+ * Root Page Access
+ *****************************************************************************/
+
+
+MenuPage_t *MenuItems_GetRootPage(void)
 {
 
     return &g_mainMenuPage;
@@ -1799,8 +1717,120 @@ MenuPage_t *Menu_GetMainPage(void)
 }
 
 
+
 /******************************************************************************
- *
+ * Version Information
+ *****************************************************************************/
+
+
+const char *MenuItems_GetVersion(void)
+{
+
+    return MENU_ITEMS_VERSION_STRING;
+
+}
+
+
+
+/******************************************************************************
+ * Module Notes
+ *****************************************************************************/
+
+
+/*
+
+Menu Database Layer:
+
+
++----------------------------+
+|      Menu Database         |
+|                            |
+| MenuPage_t objects         |
+| MenuItem_t objects         |
++-------------+--------------+
+              |
+              v
+
++----------------------------+
+|       Menu Engine          |
+|                            |
+| Runtime state              |
+| Cursor                     |
+| Navigation                 |
++-------------+--------------+
+              |
+              v
+
++----------------------------+
+|      Menu Renderer         |
+|                            |
+| LCD formatting             |
++----------------------------+
+
+
+Design Rules:
+
+1.
+Database owns only menu structure.
+
+
+2.
+Engine owns runtime navigation.
+
+
+3.
+Renderer owns display.
+
+
+4.
+Application owns real data.
+
+
+5.
+No hardware dependency exists here.
+
+
+*/
+
+
+
+/******************************************************************************
+ * Revision History
+ *****************************************************************************/
+
+
+/*
+
+Version 2.0.2
+
+Date:
+2026-07-16
+
+
+Changes:
+
+    - Rebuilt static menu database.
+
+
+    - Corrected compatibility with menu_types.h.
+
+
+    - Fixed MENU_PAGE_INFORMATION enum usage.
+
+
+    - Preserved existing architecture.
+
+
+    - Preserved static allocation model.
+
+
+    - Preserved callback driven design.
+
+
+*/
+
+
+
+/******************************************************************************
  * End Of File
- *
- ******************************************************************************/
+ *****************************************************************************/
