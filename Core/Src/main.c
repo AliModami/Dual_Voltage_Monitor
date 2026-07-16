@@ -139,23 +139,21 @@ int main(void)
    *
    * Gives LCD module time to stabilize.
    */
-  // ── گام ۱: صبر کن تا برق LCD کاملاً پایدار بشه ──
-  // Blue Pill خیلی سریع بوت می‌کنه ولی LCD به 100ms+ نیاز داره
+
   HAL_Delay(2000);
 
-  // ── گام ۲: راه‌اندازی LCD ──
-  // پارامترها: هندل I2C، آدرس، تعداد ستون، تعداد ردیف
+
+  // ( Handler I2C1، Address, Columns، Rows )َ
   LCD_Init(&hi2c1, 0x27, 20, 4);
 
-  // ── گام ۳: روشن کردن نور پس‌زمینه ──
-  LCD_BacklightOn();
-  HAL_Delay(10);
 
-  // ── گام ۴: پاک کردن صفحه ──
+
+
   LCD_Clear();
-  HAL_Delay(5);  // LCD_Clear یکم کنده، باید صبر کنیم
+  HAL_Delay(5);
 
-  // ── گام ۵: چاپ متن تست ──
+
+//------------ LCD Test Line Begin --------------------------
   LCD_SetCursor(0, 0);
   LCD_Print("Hello STM32!");
   LCD_SetCursor(0, 1);       // Line2
@@ -164,6 +162,7 @@ int main(void)
   LCD_Print("Line 3!");
   LCD_SetCursor(0, 3);       // Line2
   LCD_Print("Line 4!");
+//------------ LCD Test Line END ----------------------------
 
 
     /*
@@ -220,7 +219,7 @@ int main(void)
 
 
 
-        //----------------------------------------- Button Test @ Line 4 -  Begin--------------------------------------
+//----------------------------------------- Button Test @ Line 4 -  Begin--------------------------------------
 
         Button_AppCommand_t cmd;
 
@@ -257,7 +256,7 @@ int main(void)
             }
         }
 
-        //-----------------------------------------Button Test @ Line 4 -  End------------------------------------
+//-----------------------------------------Button Test @ Line 4 -  End------------------------------------
 
     }
 

@@ -1,129 +1,77 @@
 /**
  ******************************************************************************
  * @file           lcd_display.h
- * @brief          لایه نمایش (Display Layer) برای LCD کاراکتری پروژه STM32
+ * @brief          LCD Display Abstraction Layer Interface
  *
  * @details
- *   این فایل رابط نرم‌افزاری بین منطق برنامه و درایور سخت‌افزاری LCD را
- *   تعریف می‌کند.
+ * This file defines the public interface of the LCD Display layer.
  *
- *   هدف این لایه:
+ * The Display layer provides an abstraction between the application logic
+ * and the low-level LCD hardware driver.
  *
- *   جلوگیری از استفاده مستقیم ماژول‌های دیگر پروژه از lcd_i2c.c
- *   و ایجاد یک معماری تمیز و قابل توسعه است.
+ * The purpose of this module is to allow application modules such as:
  *
- *   معماری کلی:
+ *      - menu.c
+ *      - monitor.c
+ *      - stream.c
  *
- *   ─────────────────────────────────────────────────────────
+ * to request display operations without knowing any hardware details.
  *
- *          Application Layer
+ * The low-level communication with:
  *
- *          monitor.c
- *          menu.c
- *          stream.c
+ *      - I2C peripheral
+ *      - PCF8574 backpack
+ *      - HD44780 LCD controller
  *
- *                    |
- *                    v
+ * is handled by lcd_i2c.c.
  *
- *          lcd_display.c
- *          (مدیریت صفحات و نمایش)
  *
- *                    |
- *                    v
+ * Architecture:
  *
- *          lcd_i2c.c
- *          (درایور سخت‌افزار LCD)
- *
- *                    |
- *                    v
- *
- *          PCF8574 + HD44780 LCD
- *
- *   ─────────────────────────────────────────────────────────
+ *      Application Layer
+ *              |
+ *              v
+ *      lcd_display.c
+ *      (Display management)
+ *              |
+ *              v
+ *      lcd_i2c.c
+ *      (Hardware driver)
+ *              |
+ *              v
+ *      PCF8574 + LCD Module
  *
  *
  * @hardware
- *   - STM32F103C8T6 (Blue Pill)
- *   - LCD Character 20x4
- *   - I2C LCD Backpack (PCF8574)
+ *      MCU:
+ *          STM32F103C8T6
+ *
+ *      Display:
+ *          Character LCD
+ *
+ *      Interface:
+ *          I2C using PCF8574 backpack
  *
  *
- * @design_goal
+ * @design_note
  *
- *   این فایل فقط مسئول "چه چیزی نمایش داده شود" است.
+ * This module defines what should be displayed.
  *
- *   درایور lcd_i2c مسئول "چگونه روی LCD نوشته شود" است.
+ * It does not define how the LCD hardware is controlled.
  *
- *   بنابراین:
- *
- *   menu.c نباید بداند LCD با I2C کار می‌کند.
- *
- *   menu.c فقط درخواست نمایش می‌دهد.
- *
- *
- * @usage_example
- *
- *   // در main.c
- *
- *   LCD_Display_Init(&hi2c1);
- *
- *
- *   // نمایش یک عنوان
- *
- *   LCD_Display_ShowTitle("Voltage Monitor");
- *
- *
- *   // نمایش یک خط
- *
- *   LCD_Display_PrintLine(
- *              1,
- *              "Vin: 220.5V");
- *
- *
- * @api
- * ─────────────────────────────────────────────────────────
- *
- *   راه‌اندازی:
- *
- *   LCD_Display_Init()
- *       → راه‌اندازی لایه نمایش و LCD
- *
- *
- *   مدیریت صفحه:
- *
- *   LCD_Display_ShowTitle()
- *       → نمایش عنوان بالای صفحه
- *
- *
- *   LCD_Display_PrintLine()
- *       → نوشتن متن در یک ردیف مشخص
- *
- *
- *   LCD_Display_Clear()
- *       → پاک کردن کامل نمایش
- *
- *
- *   Refresh:
- *
- *   LCD_Display_RequestRefresh()
- *       → درخواست بازسازی صفحه
- *
- *
- *   LCD_Display_NeedRefresh()
- *       → بررسی نیاز به Refresh
- *
- *
- *   LCD_Display_ClearRefreshFlag()
- *       → پاک کردن Flag Refresh
+ * Keeping this separation allows future replacement of the LCD hardware
+ * without changing the application modules.
  *
  *
  * @version    1.0.0
  * @date       2026
  * @author     Dual Voltage Monitor Project
  *
- * @note
- *   این فایل فقط Header است.
- *   پیاده‌سازی توابع در lcd_display.c قرار دارد.
+ *
+ * @change_history
+ *
+ * Version 1.0.0:
+ *      Initial professional documentation update.
  *
  ******************************************************************************
  */
@@ -133,67 +81,114 @@
 #define LCD_DISPLAY_H
 
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Dependencies
+/* --------------------------------------------------------------------------
+ * Includes
  *
- * کتابخانه‌های مورد نیاز این Header
- * ──────────────────────────────────────────────────────────────────────────
+ * Required external definitions for this module.
+ * --------------------------------------------------------------------------
  */
 
+
+#include <stdint.h>
 
 #include "stm32f1xx_hal.h"
-#include "stdint.h"
 
 
 
-/* ──────────────────────────────────────────────────────────────────────────
+/* --------------------------------------------------------------------------
  * LCD Display Configuration
  *
- * تنظیمات عمومی صفحه نمایش
+ * General configuration parameters used by the Display layer.
  *
- * این مقادیر در کل پروژه استفاده می‌شوند.
- * بنابراین از Magic Number جلوگیری می‌کنیم.
- *
- * ──────────────────────────────────────────────────────────────────────────
+ * These definitions avoid the use of magic numbers and keep the LCD
+ * dimensions configurable from a single location.
+ * --------------------------------------------------------------------------
  */
 
 
-#define LCD_DISPLAY_COLS          20
-#define LCD_DISPLAY_ROWS          4
+/**
+ * @brief Default LCD column count.
+ *
+ * This value represents the number of character positions available
+ * on each LCD row.
+ */
+#define LCD_DISPLAY_COLS              20U
 
 
-#define LCD_DISPLAY_TITLE_SIZE    32
+
+/**
+ * @brief Default LCD row count.
+ *
+ * This value represents the number of available display lines.
+ */
+#define LCD_DISPLAY_ROWS              4U
 
 
 
-/* ──────────────────────────────────────────────────────────────────────────
+/**
+ * @brief Maximum title string length.
+ *
+ * This buffer stores the current page title internally.
+ */
+#define LCD_DISPLAY_TITLE_SIZE        32U
+
+
+
+
+/* --------------------------------------------------------------------------
  * Display Page Enumeration
  *
- * مشخص می‌کند LCD در حال نمایش کدام صفحه است.
+ * Defines the logical pages managed by the Display layer.
  *
- * استفاده از enum باعث می‌شود:
+ * Using an enumeration instead of numeric values improves:
  *
- * - خوانایی کد بیشتر شود
- * - خطاهای مقایسه عددی کم شود
- * - توسعه Menu ساده‌تر شود
+ *      - code readability
+ *      - maintenance
+ *      - future menu expansion
  *
- * ──────────────────────────────────────────────────────────────────────────
+ * --------------------------------------------------------------------------
  */
 
 
+/**
+ * @brief LCD display page identifiers.
+ */
 typedef enum
 {
 
+    /**
+     * @brief No active display page.
+     */
     LCD_PAGE_NONE = 0,
 
+
+    /**
+     * @brief Home or main screen.
+     */
     LCD_PAGE_HOME,
 
+
+    /**
+     * @brief Live voltage monitoring screen.
+     */
     LCD_PAGE_MONITOR,
 
+
+    /**
+     * @brief UART streaming display screen.
+     */
     LCD_PAGE_STREAM,
 
+
+    /**
+     * @brief User configuration settings screen.
+     */
     LCD_PAGE_SETTINGS,
 
+
+    /**
+     * @brief System information screen.
+     */
     LCD_PAGE_SYSTEM_INFO
 
 
@@ -201,122 +196,122 @@ typedef enum
 
 
 
-/* ──────────────────────────────────────────────────────────────────────────
+
+
+/* --------------------------------------------------------------------------
  * LCD Display Handle
  *
- * این ساختار وضعیت فعلی لایه Display را نگهداری می‌کند.
+ * Stores the internal state information of the Display layer.
  *
- * مشابه Handle در HAL است.
+ * This structure follows the same design concept used by STM32 HAL handles.
  *
- * به جای متغیرهای پراکنده، تمام اطلاعات مربوط به LCD
- * در یک ساختار قرار می‌گیرد.
+ * Keeping module status inside one structure avoids scattered global
+ * variables and improves maintainability.
  *
- * ──────────────────────────────────────────────────────────────────────────
+ * --------------------------------------------------------------------------
  */
 
 
+/**
+ * @brief LCD Display module handle.
+ *
+ * Contains:
+ *
+ *      - Current page information
+ *      - Refresh status
+ *      - LCD title buffer
+ *      - Associated I2C peripheral handle
+ */
 typedef struct
 {
 
-    /*
-     * عنوان فعلی صفحه
+    /**
+     * @brief Current page title text.
      *
-     * مثال:
+     * Example:
      *
-     * "Voltage Monitor"
+     *      "Voltage Monitor"
      */
     char title[LCD_DISPLAY_TITLE_SIZE];
 
 
-    /*
-     * صفحه‌ای که هم اکنون نمایش داده می‌شود
+
+    /**
+     * @brief Currently active display page.
      */
     LCD_DisplayPage_t current_page;
 
 
 
-    /*
-     * Flag درخواست Refresh
+    /**
+     * @brief Display refresh request flag.
      *
-     * وقتی مقدار 1 باشد یعنی:
+     * Value meaning:
      *
-     * صفحه باید دوباره نوشته شود.
+     *      1 : Display update is required
      *
+     *      0 : Current display content is valid
      */
     uint8_t refresh_required;
 
 
 
-    /*
-     * اشاره‌گر به I2C مورد استفاده LCD
+    /**
+     * @brief Pointer to the I2C peripheral used by LCD.
      *
-     * مثال:
+     * Example:
      *
-     * &hi2c1
-     *
+     *      &hi2c1
      */
     I2C_HandleTypeDef *hi2c;
 
 
 
 } LCD_DisplayHandle_t;
-
-
-
-/* ادامه فایل در پارت 2 ارسال می‌شود */
-
-
-/* ──────────────────────────────────────────────────────────────────────────
+/* --------------------------------------------------------------------------
  * Public Function Prototypes
  *
- * توابعی که سایر بخش‌های پروژه اجازه استفاده از آنها را دارند.
+ * The functions below represent the official API of the Display layer.
  *
- * این بخش API رسمی لایه Display است.
+ * Application modules should use only these functions.
  *
- * ماژول‌هایی مثل:
+ * Direct access to lcd_i2c.c from application modules is not allowed.
  *
- *   menu.c
- *   monitor.c
- *   stream.c
- *
- * فقط باید از این API استفاده کنند.
- *
- * نباید مستقیماً lcd_i2c را صدا بزنند.
- *
- * ──────────────────────────────────────────────────────────────────────────
+ * --------------------------------------------------------------------------
  */
 
 
-/* ══════════════════════════════════════════════════════════════════════════
+/* --------------------------------------------------------------------------
  * Initialization
- * ══════════════════════════════════════════════════════════════════════════
+ * --------------------------------------------------------------------------
  */
 
 
 /**
- * @brief  راه‌اندازی لایه نمایش LCD
+ * @brief Initialize the LCD Display abstraction layer.
  *
  * @details
- *   این اولین تابعی است که بعد از آماده شدن I2C باید اجرا شود.
+ * This function initializes the Display module and the lower-level
+ * LCD driver.
  *
- *   این تابع:
+ * Initialization sequence:
  *
- *   1. هندل I2C را دریافت می‌کند
- *   2. درایور پایین‌دستی lcd_i2c را Initialize می‌کند
- *   3. نور پس‌زمینه را روشن می‌کند
- *   4. LCD را آماده نمایش می‌کند
+ *      1. Store the I2C handle.
+ *      2. Initialize the LCD hardware driver.
+ *      3. Enable LCD backlight.
+ *      4. Clear the display.
+ *      5. Prepare the initial display state.
  *
  *
  * @param hi2c
- *        اشاره‌گر به I2C مورد استفاده LCD
+ *      Pointer to the I2C peripheral handle connected to the LCD.
  *
- *        مثال:
+ * @note
+ *      The I2C peripheral must be initialized before calling this function.
  *
- *        LCD_Display_Init(&hi2c1);
+ * @example
  *
- *
- * @return
- *        ندارد
+ *      LCD_Display_Init(&hi2c1);
  *
  */
 void LCD_Display_Init(I2C_HandleTypeDef *hi2c);
@@ -324,18 +319,19 @@ void LCD_Display_Init(I2C_HandleTypeDef *hi2c);
 
 
 
-/* ══════════════════════════════════════════════════════════════════════════
- * Basic Display Functions
- * ══════════════════════════════════════════════════════════════════════════
+
+/* --------------------------------------------------------------------------
+ * Basic Display Operations
+ * --------------------------------------------------------------------------
  */
 
 
 /**
- * @brief  پاک کردن کل صفحه نمایش
+ * @brief Clear the complete LCD display.
  *
  * @details
- *   تمام کاراکترهای LCD حذف می‌شوند
- *   و کرسر به خانه اول بازمی‌گردد.
+ * Removes all visible characters from the LCD and resets the cursor
+ * position through the lower-level LCD driver.
  *
  */
 void LCD_Display_Clear(void);
@@ -344,23 +340,19 @@ void LCD_Display_Clear(void);
 
 
 /**
- * @brief  نمایش عنوان صفحه
+ * @brief Display a page title.
  *
  * @details
- *   معمولاً برای ردیف اول LCD استفاده می‌شود.
+ * The title is normally displayed on the first LCD row.
  *
- *   مثال:
- *
- *       +--------------------+
- *       | Voltage Monitor    |
- *       |                    |
- *       | Vin:220.5V         |
- *       | Vout:219.8V        |
- *       +--------------------+
+ * The title is also stored internally for future use.
  *
  *
  * @param title
- *        متن عنوان صفحه
+ *      Pointer to the title string.
+ *
+ * @note
+ *      NULL pointer input is ignored.
  *
  */
 void LCD_Display_ShowTitle(const char *title);
@@ -368,34 +360,30 @@ void LCD_Display_ShowTitle(const char *title);
 
 
 
+
 /**
- * @brief  نوشتن متن در یک خط مشخص LCD
+ * @brief Print text on a specific LCD row.
  *
  * @details
- *   این تابع ابتدا خط مورد نظر را پاک می‌کند،
- *   سپس متن جدید را نمایش می‌دهد.
+ * The selected row is cleared before writing new content.
+ *
+ * This prevents old characters remaining when the new text is shorter
+ * than the previous content.
  *
  *
  * @param row
- *        شماره خط
+ *      LCD row index.
  *
- *        LCD 20x4:
+ *      Example for a 20x4 LCD:
  *
- *        row = 0  خط اول
- *        row = 1  خط دوم
- *        row = 2  خط سوم
- *        row = 3  خط چهارم
+ *          Row 0 : First line
+ *          Row 1 : Second line
+ *          Row 2 : Third line
+ *          Row 3 : Fourth line
  *
  *
  * @param text
- *        متن مورد نمایش
- *
- *
- * @example
- *
- *        LCD_Display_PrintLine(
- *                 1,
- *                 "Vin:220.5V");
+ *      Text string to display.
  *
  */
 void LCD_Display_PrintLine(uint8_t row,
@@ -404,32 +392,32 @@ void LCD_Display_PrintLine(uint8_t row,
 
 
 
+
 /**
- * @brief  نوشتن مقدار عددی در یک خط
+ * @brief Display a floating-point value with a label.
  *
  * @details
- *   برای نمایش مقادیر اندازه‌گیری شده استفاده می‌شود.
+ * This function is intended for measured values such as:
  *
- *   مثال:
+ *      Vin
+ *      Vout
+ *      Temperature
  *
- *       Voltage = 220.5
- *
- *       نمایش:
- *
- *       Vin:220.5V
+ * It keeps formatting logic inside the Display layer and prevents
+ * duplicated LCD formatting code across application modules.
  *
  *
  * @param row
- *        شماره خط LCD
+ *      LCD row index.
  *
  * @param label
- *        متن قبل از عدد
+ *      Text displayed before the numeric value.
  *
  * @param value
- *        مقدار اعشاری
+ *      Floating-point value to display.
  *
  * @param decimals
- *        تعداد رقم اعشار
+ *      Number of decimal digits.
  *
  */
 void LCD_Display_PrintFloat(uint8_t row,
@@ -440,22 +428,23 @@ void LCD_Display_PrintFloat(uint8_t row,
 
 
 
-/* ══════════════════════════════════════════════════════════════════════════
- * Page Management
- * ══════════════════════════════════════════════════════════════════════════
+
+/* --------------------------------------------------------------------------
+ * Display Page Management
+ * --------------------------------------------------------------------------
  */
 
 
 /**
- * @brief  تعیین صفحه فعال فعلی
+ * @brief Set the current LCD page identifier.
  *
  * @details
- *   برای هماهنگی با Menu استفاده می‌شود.
+ * Used by menu and application modules to keep track of the active
+ * display context.
  *
- *   مثال:
  *
- *       LCD_Display_SetPage(
- *                    LCD_PAGE_MONITOR);
+ * @param page
+ *      New display page identifier.
  *
  */
 void LCD_Display_SetPage(LCD_DisplayPage_t page);
@@ -463,11 +452,12 @@ void LCD_Display_SetPage(LCD_DisplayPage_t page);
 
 
 
+
 /**
- * @brief  دریافت صفحه فعلی LCD
+ * @brief Get the current LCD page identifier.
  *
  * @return
- *        مقدار enum صفحه فعال
+ *      Current active display page.
  *
  */
 LCD_DisplayPage_t LCD_Display_GetPage(void);
@@ -475,26 +465,27 @@ LCD_DisplayPage_t LCD_Display_GetPage(void);
 
 
 
-/* ══════════════════════════════════════════════════════════════════════════
+
+/* --------------------------------------------------------------------------
  * Refresh Management
- * ══════════════════════════════════════════════════════════════════════════
+ * --------------------------------------------------------------------------
  */
 
 
 /**
- * @brief  درخواست Refresh صفحه
+ * @brief Request a display refresh.
  *
  * @details
- *   به جای نوشتن دائم روی LCD،
- *   فقط زمانی Refresh انجام می‌دهیم که لازم باشد.
+ * The Display layer does not continuously rewrite the LCD.
  *
- *   این روش:
+ * Instead, a refresh flag is used to indicate that the visible content
+ * should be updated.
  *
- *   - سرعت بیشتر
- *   - کاهش مصرف CPU
- *   - جلوگیری از Flicker LCD
+ * This reduces:
  *
- *   ایجاد می‌کند.
+ *      - CPU usage
+ *      - unnecessary I2C traffic
+ *      - LCD flicker
  *
  */
 void LCD_Display_RequestRefresh(void);
@@ -502,13 +493,15 @@ void LCD_Display_RequestRefresh(void);
 
 
 
+
 /**
- * @brief  بررسی نیاز به Refresh
+ * @brief Check whether a display refresh is required.
  *
  * @return
- *        1 : نیاز به Refresh وجود دارد
  *
- *        0 : نیازی نیست
+ *      1 : Refresh required
+ *
+ *      0 : No refresh required
  *
  */
 uint8_t LCD_Display_NeedRefresh(void);
@@ -516,22 +509,28 @@ uint8_t LCD_Display_NeedRefresh(void);
 
 
 
+
 /**
- * @brief  پاک کردن Flag مربوط به Refresh
+ * @brief Clear the display refresh request flag.
+ *
+ * @details
+ * Called after the display content has been updated successfully.
  *
  */
 void LCD_Display_ClearRefreshFlag(void);
 
 
 
-/* ══════════════════════════════════════════════════════════════════════════
- * Backlight Control
- * ══════════════════════════════════════════════════════════════════════════
+
+
+/* --------------------------------------------------------------------------
+ * LCD Backlight Control
+ * --------------------------------------------------------------------------
  */
 
 
 /**
- * @brief روشن کردن نور پس‌زمینه LCD
+ * @brief Turn LCD backlight on.
  *
  */
 void LCD_Display_BacklightOn(void);
@@ -539,81 +538,25 @@ void LCD_Display_BacklightOn(void);
 
 
 
+
 /**
- * @brief خاموش کردن نور پس‌زمینه LCD
+ * @brief Turn LCD backlight off.
  *
  */
 void LCD_Display_BacklightOff(void);
 
 
 
+
+
 #endif /* LCD_DISPLAY_H */
-/* ══════════════════════════════════════════════════════════════════════════
- * توضیحات تکمیلی معماری
- * ══════════════════════════════════════════════════════════════════════════
- *
- * نکات مهم طراحی:
- *
- * 1) این فایل نباید هیچ اطلاعاتی از نحوه کار داخلی LCD داشته باشد.
- *
- *    یعنی:
- *
- *       ❌  ارسال I2C
- *       ❌  کنترل PCF8574
- *       ❌  دستورهای HD44780
- *
- *    همه این موارد در lcd_i2c.c قرار دارند.
- *
- *
- * 2) سایر ماژول‌های پروژه فقط با این لایه ارتباط دارند.
- *
- *
- * مثال:
- *
- *
- *      monitor.c
- *
- *          LCD_Display_PrintFloat();
- *
- *
- *              |
- *              v
- *
- *      lcd_display.c
- *
- *
- *              |
- *              v
- *
- *      lcd_i2c.c
- *
- *
- *              |
- *              v
- *
- *      LCD Hardware
- *
- *
- *
- * 3) این جداسازی باعث می‌شود در آینده بتوانیم:
- *
- *      - LCD کاراکتری را با TFT جایگزین کنیم
- *      - منو را تغییر دهیم
- *      - چند نوع نمایشگر داشته باشیم
- *
- *      بدون اینکه منطق برنامه تغییر کند.
- *
- *
- * ══════════════════════════════════════════════════════════════════════════
- */
 
 
-
-/*
- * پایان Header Guard
+/******************************************************************************
+ * End of File
  *
- * این خط باعث می‌شود فایل چند بار توسط Compiler
- * Include نشود.
+ * This header defines only the public interface of the LCD Display layer.
  *
- */
-//#endif /* LCD_DISPLAY_H */
+ * The hardware-specific implementation remains inside lcd_i2c.c.
+ *
+ *****************************************************************************/

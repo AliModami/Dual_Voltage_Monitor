@@ -1,674 +1,500 @@
-/**
- ******************************************************************************
+/******************************************************************************
  * @file           lcd_i2c.h
- * @brief          درایور LCD کاراکتری HD44780 از طریق رابط I2C برای STM32
+ * @brief          HD44780 Character LCD Driver Interface over I2C PCF8574
  *
  * @details
- *   این فایل Header مربوط به کتابخانه LCD I2C است.
+ * Low level hardware abstraction layer for character LCD modules using:
  *
- *   این درایور امکان کنترل LCD های کاراکتری استاندارد را که دارای
- *   کنترلر HD44780 یا کنترلر سازگار هستند فراهم می‌کند.
- *
- *   ارتباط بین STM32 و LCD توسط ماژول توسعه‌دهنده I/O مدل PCF8574
- *   انجام می‌شود.
- *
- *
- *   ساختار ارتباط:
- *
- *
- *        STM32
- *          |
- *          |
- *          |  I2C
- *          |
- *          |
- *       PCF8574
- *          |
- *          |
- *          |  4-bit Parallel
- *          |
- *          |
- *       HD44780 LCD
+ *      STM32F103C8T6
+ *              |
+ *              | I2C1
+ *              |
+ *          PCF8574 I/O Expander
+ *              |
+ *              | 4-bit Parallel Interface
+ *              |
+ *          HD44780 LCD Controller
  *
  *
+ * Supported LCD Modules:
  *
- * @supported_lcd
- *
- *       - LCD 16x2
- *       - LCD 20x4
+ *      - 20x4 Character LCD
+ *      - 16x2 Character LCD
  *
  *
- * @hardware
+ * LCD Change Configuration:
  *
- *       Microcontroller:
+ * This driver supports both 20x4 and 16x2 LCD modules.
  *
+ * To change LCD type, application code only needs to change:
+ *
+ *      1. LCD address
+ *      2. LCD number of columns
+ *      3. LCD number of rows
+ *
+ *
+ * Example:
+ *
+ *      For 20x4 LCD:
+ *
+ *          LCD_I2C_ADDRESS_DEFAULT
+ *          LCD_DEFAULT_COLUMNS = 20
+ *          LCD_DEFAULT_ROWS    = 4
+ *
+ *
+ *      For 16x2 LCD:
+ *
+ *          LCD_I2C_ADDRESS_DEFAULT
+ *          LCD_DEFAULT_COLUMNS = 16
+ *          LCD_DEFAULT_ROWS    = 2
+ *
+ *
+ * No modification is required inside lcd_i2c.c.
+ *
+ *
+ *
+ * Hardware:
+ *
+ *      MCU:
  *          STM32F103C8T6
- *          (Blue Pill)
  *
  *
- *       I2C Expander:
+ *      I2C Interface:
  *
- *          PCF8574
- *          PCF8574A
+ *          I2C1
  *
+ *      Default Pins:
  *
- *       LCD Controller:
+ *          PB6  -> I2C1_SCL
+ *          PB7  -> I2C1_SDA
  *
- *          HD44780
- *          Compatible Controllers
  *
+ *      LCD Interface:
  *
+ *          PCF8574 / PCF8574A Backpack
  *
- * @wiring
  *
- *   STM32 Blue Pill       LCD I2C Module
- *   ───────────────────────────────────
  *
- *       PB6  (I2C1_SCL)  →  SCL
+ * @architecture
  *
- *       PB7  (I2C1_SDA)  →  SDA
+ * Application Layer:
  *
- *       5V               →  VCC
+ *      menu.c
+ *      monitor.c
+ *      stream.c
  *
- *       GND              →  GND
+ *              |
+ *              v
  *
+ *      lcd_display.c
  *
+ *              |
+ *              v
  *
- * @i2c_address
+ *      lcd_i2c.c
  *
- *   آدرس I2C ماژول PCF8574 وابسته به پایه‌های A0,A1,A2 است.
  *
+ * This driver controls only LCD hardware.
  *
- *   PCF8574:
+ * It does not contain:
  *
- *       A2 A1 A0
+ *      - Menu logic
+ *      - Measurement processing
+ *      - User interface rules
+ *      - Application screens
  *
- *       0  0  0   → 0x27
  *
- *       1  1  1   → 0x20
  *
+ * @version     3.0.0
+ * @date        2026
+ * @author      Dual Voltage Monitor Project
  *
- *
- *   PCF8574A:
- *
- *       A2 A1 A0
- *
- *       0  0  0   → 0x3F
- *
- *
- *   اگر LCD پاسخ نداد:
- *
- *       1) اتصال SDA/SCL را بررسی کن
- *
- *       2) Pull-up های I2C را بررسی کن
- *
- *       3) از I2C Scanner استفاده کن
- *
- *
- *
- * @important
- *
- *   قبل از استفاده از توابع LCD باید تابع:
- *
- *
- *       LCD_Init()
- *
- *
- *   یک بار اجرا شود.
- *
- *
- *
- * ============================================================================
- *
- *                         API Reference
- *
- * ============================================================================
- *
- *
- * ---------------------------------------------------------------------------
- * راه‌اندازی LCD
- * ---------------------------------------------------------------------------
- *
- *
- * LCD_Init()
- *
- *   راه‌اندازی اولیه LCD.
- *
- *
- * مثال:
- *
- *      LCD_Init(&hi2c1, 0x27, 20, 4);
- *
- *
- *   برای LCD 20x4
- *
- *
- *
- * ---------------------------------------------------------------------------
- * نمایش متن
- * ---------------------------------------------------------------------------
- *
- *
- * LCD_Print()
- *
- *   چاپ یک رشته متنی در مکان فعلی Cursor.
- *
- *
- * مثال:
- *
- *      LCD_Print("Voltage Monitor");
- *
- *
- *
- *
- * LCD_PrintChar()
- *
- *   چاپ یک کاراکتر تکی.
- *
- *
- * مثال:
- *
- *      LCD_PrintChar('A');
- *
- *
- *
- *
- * LCD_PrintNumber()
- *
- *   چاپ عدد صحیح.
- *
- *
- * مثال:
- *
- *      LCD_PrintNumber(220);
- *
- *
- *
- *
- * LCD_PrintFloat()
- *
- *   چاپ عدد اعشاری با تعداد رقم اعشار مشخص.
- *
- *
- * مثال:
- *
- *      LCD_PrintFloat(220.56,1);
- *
- *
- * نتیجه:
- *
- *      220.6
- *
- *
- *
- * ============================================================================
- *
- * @version    2.0.0
- * @date       2026
- * @author     STM32 Embedded Project
  *
  * @history
  *
- *   Version 1.0.0
+ * Version 1.0.0
+ *      Initial LCD I2C driver.
  *
- *       - ایجاد اولیه درایور LCD I2C
+ * Version 2.0.0
+ *      Improved documentation and hardware abstraction.
  *
+ * Version 3.0.0
+ *      Added flexible LCD geometry configuration.
+ *      Added clear documentation for 16x2 and 20x4 usage.
  *
- *   Version 2.0.0
- *
- *       - بازطراحی ساختار Header
- *
- *       - افزودن مستندات آموزشی
- *
- *       - آماده‌سازی برای پروژه BluePill_Template_V1
- *
- ******************************************************************************
- */
-
-
-/* ==========================================================================
- *                         Header Guard
- *
- * جلوگیری از Include شدن چندباره فایل
- *
- * ========================================================================== */
+ ******************************************************************************/
 
 #ifndef LCD_I2C_H
 #define LCD_I2C_H
 
 
-
-/* ==========================================================================
- *                         Dependencies
- *
- * فایل‌های مورد نیاز
- *
- * ========================================================================== */
+/* --------------------------------------------------------------------------
+ * Includes
+ * -------------------------------------------------------------------------- */
 
 
-/*
- * کتابخانه HAL مربوط به STM32F1
- *
- * شامل:
- *
- *      I2C_HandleTypeDef
- *
- *      HAL_I2C_Master_Transmit()
- *
- *      HAL_Delay()
- *
- */
+#include <stdint.h>
+
 #include "stm32f1xx_hal.h"
 
 
 
-/*
- * برای استفاده از انواع استاندارد:
+/* --------------------------------------------------------------------------
+ * LCD Hardware Configuration
  *
- *      uint8_t
- *      uint16_t
- *      int32_t
+ * Change these values according to the connected LCD module.
  *
- */
-#include <stdint.h>
-
-
-
-
-
-/* ==========================================================================
- *                         Default I2C Address
+ * IMPORTANT:
  *
- * آدرس پیش‌فرض LCD
+ * The application should pass these values to LCD_Init().
  *
- * ========================================================================== */
+ * The driver source file lcd_i2c.c does not need modification.
+ * -------------------------------------------------------------------------- */
 
 
-/*
- * معمولاً ماژول‌های LCD I2C آماده با PCF8574
- * دارای این آدرس هستند.
+/**
+ * @brief Default PCF8574 7-bit I2C address.
  *
- * در صورت نیاز هنگام LCD_Init قابل تغییر است.
- */
-#define LCD_I2C_ADDR_DEFAULT      0x27
-
-
-
-/*
- * آدرس رایج PCF8574A
+ * Common PCF8574 addresses:
  *
- * در صورت استفاده Uncomment شود.
- */
-
-//#define LCD_I2C_ADDR_ALT          0x3F
-
-
-
-
-
-/* ==========================================================================
- *                         LCD Dimensions
- *
- * ابعاد LCD
- *
- * ========================================================================== */
-
-
-/*
- * LCD 20x4 مورد استفاده پروژه
- */
-#define LCD_COLS_20               20
-#define LCD_ROWS_4                 4
-
-
-
-/*
- * LCD 16x2
- *
- * در صورت نیاز قابل فعال‌سازی است.
- */
-
-//#define LCD_COLS_16               16
-//#define LCD_ROWS_2                 2
-
-/* ==========================================================================
- *                         HD44780 LCD Commands
- *
- * دستورات کنترلر LCD
- *
- * ========================================================================== */
-
-
-/*
- * کنترلر HD44780 دارای مجموعه‌ای از دستورات داخلی است.
- *
- * این دستورات توسط پایه‌های RS و خطوط داده به LCD ارسال می‌شوند.
- *
- * ما در برنامه به جای استفاده از عدد خام،
- * از نام‌های معنی‌دار استفاده می‌کنیم.
- *
- * مزیت:
- *
- *      LCD_SendCommand(0x01);
- *
- * خوانایی کمتری دارد.
+ *      0x20 - 0x27
  *
  *
- * ولی:
+ * Example:
  *
- *      LCD_SendCommand(LCD_CMD_CLEAR_DISPLAY);
+ *      If backpack address is 0x27:
  *
- * مشخص می‌کند که دستور چه کاری انجام می‌دهد.
+ *          LCD_Init(&hi2c1, 0x27, columns, rows);
  *
  */
-
-
-/* پاک کردن کل صفحه LCD */
-#define LCD_CMD_CLEAR_DISPLAY       0x01
+#define LCD_I2C_ADDRESS_DEFAULT          0x27U
 
 
 
-/*
- * بازگشت Cursor به خانه اول:
+/**
+ * @brief PCF8574A alternative address range.
  *
- * Column = 0
- * Row    = 0
+ * PCF8574A modules normally use:
  *
- * بدون پاک کردن محتویات صفحه
- */
-#define LCD_CMD_RETURN_HOME         0x02
-
-
-
-/*
- * تنظیم حرکت Cursor بعد از نوشتن کاراکتر:
+ *      0x38 - 0x3F
  *
- * Increment Address
  *
- * حرکت به سمت راست
+ * Example:
  *
- * بدون Shift صفحه
- */
-#define LCD_CMD_ENTRY_MODE          0x06
-
-
-
-/*
- * روشن کردن نمایش:
+ *      If backpack address is 0x3F:
  *
- * Display ON
- * Cursor OFF
- * Blink OFF
- */
-#define LCD_CMD_DISPLAY_ON          0x0C
-
-
-
-/*
- * خاموش کردن نمایش:
- *
- * اطلاعات داخل DDRAM حفظ می‌شود.
- *
- * فقط خروجی LCD خاموش می‌شود.
- */
-#define LCD_CMD_DISPLAY_OFF         0x08
-
-
-
-/*
- * تنظیم نوع ارتباط LCD:
- *
- *      4-bit Mode
- *
- *      2 Lines
- *
- *      Character Font 5x8
+ *          LCD_Init(&hi2c1, 0x3F, columns, rows);
  *
  */
-#define LCD_CMD_FUNCTION_SET        0x28
-
-
-
-/*
- * شروع آدرس حافظه CGRAM
- *
- * برای ساخت کاراکتر سفارشی
- */
-#define LCD_CMD_SET_CGRAM           0x40
-
-
-
-/*
- * شروع آدرس حافظه DDRAM
- *
- * برای تغییر مکان Cursor
- */
-#define LCD_CMD_SET_DDRAM           0x80
+#define LCD_I2C_ADDRESS_PCF8574A         0x3FU
 
 
 
 
-
-/* ==========================================================================
- *                         PCF8574 Pin Mapping
- *
- * نگاشت پایه‌های PCF8574 به LCD
- *
- * ========================================================================== */
-
-
-/*
- * PCF8574 یک مبدل I2C به خروجی دیجیتال است.
- *
- * هر بیت خروجی این آی‌سی به یکی از پایه‌های LCD وصل می‌شود.
+/**
+ * @brief Default LCD configuration.
  *
  *
- * Mapping رایج:
+ * Select the connected LCD type here.
  *
  *
- * PCF8574       LCD
- * ─────────────────────
+ * 20x4 LCD configuration:
  *
- * P0            RS
+ *      Columns = 20
+ *      Rows    = 4
  *
- * P1            RW
  *
- * P2            EN
+ *      #define LCD_DEFAULT_COLUMNS 20U
+ *      #define LCD_DEFAULT_ROWS     4U
  *
- * P3            Backlight
  *
- * P4            D4
  *
- * P5            D5
+ * 16x2 LCD configuration:
  *
- * P6            D6
+ *      Columns = 16
+ *      Rows    = 2
  *
- * P7            D7
  *
+ *      #define LCD_DEFAULT_COLUMNS 16U
+ *      #define LCD_DEFAULT_ROWS     2U
+ *
+ *
+ *
+ * Only these values need to be changed when replacing LCD module.
  *
  */
+#define LCD_DEFAULT_COLUMNS              20U
+#define LCD_DEFAULT_ROWS                  4U
 
 
-/*
- * Register Select
+
+/* --------------------------------------------------------------------------
+ * HD44780 Command Definitions
+ *
+ * These constants replace raw numeric values.
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @brief Clear display command.
+ */
+#define LCD_CMD_CLEAR_DISPLAY            0x01U
+
+
+
+/**
+ * @brief Return cursor to home position.
+ */
+#define LCD_CMD_RETURN_HOME              0x02U
+
+
+
+/**
+ * @brief Entry mode configuration.
+ *
+ * Cursor moves right.
+ * Display does not shift.
+ */
+#define LCD_CMD_ENTRY_MODE               0x06U
+
+
+
+/**
+ * @brief Display ON command.
+ *
+ * Display ON.
+ * Cursor OFF.
+ * Blink OFF.
+ */
+#define LCD_CMD_DISPLAY_ON               0x0CU
+
+
+
+/**
+ * @brief Display OFF command.
+ */
+#define LCD_CMD_DISPLAY_OFF              0x08U
+
+
+
+/**
+ * @brief Function set command.
+ *
+ * 4-bit interface.
+ * 2-line mode.
+ * 5x8 font.
+ *
+ * Note:
+ *
+ * HD44780 uses the same command for:
+ *
+ *      16x2 LCD
+ *      20x4 LCD
+ *
+ * because both displays internally use
+ * two controller lines.
+ */
+#define LCD_CMD_FUNCTION_SET             0x28U
+
+
+
+/**
+ * @brief Set CGRAM address command.
+ */
+#define LCD_CMD_SET_CGRAM                0x40U
+
+
+
+/**
+ * @brief Set DDRAM address command.
+ */
+#define LCD_CMD_SET_DDRAM                0x80U
+
+/* --------------------------------------------------------------------------
+ * PCF8574 Backpack Pin Mapping
+ *
+ * Default LCD I2C backpack wiring:
+ *
+ *
+ *      PCF8574          HD44780 LCD
+ *
+ *      P0  ------------ RS
+ *
+ *      P1  ------------ RW
+ *
+ *      P2  ------------ EN
+ *
+ *      P3  ------------ Backlight
+ *
+ *      P4  ------------ D4
+ *
+ *      P5  ------------ D5
+ *
+ *      P6  ------------ D6
+ *
+ *      P7  ------------ D7
+ *
+ *
+ * RW line is not used because this driver operates
+ * in write-only mode.
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @brief Register Select bit.
  *
  * RS = 0:
  *
- *      Command
+ *      Command register
  *
  *
  * RS = 1:
  *
- *      Data
- *
+ *      Data register
  */
-#define PCF8574_RS                  0x01
+#define LCD_PCF8574_RS_BIT                0x01U
 
-
-
-/*
- * Read / Write
- *
- * در این درایور فقط حالت نوشتن استفاده می‌شود.
- *
- * بنابراین همیشه صفر است.
- */
-#define PCF8574_RW                  0x02
-
-
-
-/*
- * Enable Pulse
- *
- * LCD هنگام تغییر این بیت
- * اطلاعات موجود روی D4-D7 را می‌خواند.
- */
-#define PCF8574_EN                  0x04
-
-
-
-/*
- * Backlight Control
- *
- * روشنایی LED پشت LCD
- */
-#define PCF8574_BL                  0x08
-
-
-
-
-
-/* ==========================================================================
- *                         LCD Handle Structure
- *
- * ساختار نگهداری اطلاعات LCD
- *
- * ========================================================================== */
 
 
 /**
- * @brief
- *   ساختار اطلاعات LCD
+ * @brief Read/Write bit.
  *
- * @details
- *   این Structure تمام اطلاعات مورد نیاز
- *   برای کنترل یک LCD را نگهداری می‌کند.
+ * The driver never reads from LCD.
+ */
+#define LCD_PCF8574_RW_BIT                0x02U
+
+
+
+/**
+ * @brief Enable pulse bit.
+ *
+ * HD44780 captures data on EN falling edge.
+ */
+#define LCD_PCF8574_ENABLE_BIT            0x04U
+
+
+
+/**
+ * @brief Backlight control bit.
+ */
+#define LCD_PCF8574_BACKLIGHT_BIT         0x08U
+
+
+
+
+
+/* --------------------------------------------------------------------------
+ * LCD Driver Handle Structure
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @brief LCD driver context structure.
+ *
+ * This structure stores all runtime information
+ * required to control one LCD module.
  *
  *
- *   می‌توان آن را مانند "کارت شناسایی LCD" در نظر گرفت.
+ * The structure supports both:
+ *
+ *      - 20x4 LCD
+ *      - 16x2 LCD
  *
  *
- *   اطلاعات ذخیره شده:
+ * The LCD size is defined by:
  *
- *       - کدام I2C استفاده می‌شود
+ *      columns
  *
- *       - آدرس ماژول
- *
- *       - اندازه LCD
- *
- *       - وضعیت نور
- *
- *       - تنظیمات نمایش
- *
- *
- * @note
- *
- *   در نسخه فعلی یک LCD استفاده می‌شود.
- *
- *   ساختار به صورت عمومی طراحی شده تا در آینده
- *   امکان پشتیبانی چند LCD نیز وجود داشته باشد.
+ *      rows
  *
  */
 typedef struct
 {
 
-    /*
-     * اشاره‌گر به I2C مورد استفاده
+    /**
+     * @brief STM32 HAL I2C handle.
      *
-     * مثال:
+     * Example:
      *
      *      &hi2c1
-     *
      */
     I2C_HandleTypeDef *hi2c;
 
 
 
-    /*
-     * آدرس 7 بیتی PCF8574
+    /**
+     * @brief PCF8574 7-bit I2C address.
      *
-     * مثال:
+     * Example:
      *
      *      0x27
      *
+     * Note:
+     *
+     * HAL internally shifts this value:
+     *
+     *      0x27 << 1 = 0x4E
      */
     uint8_t address;
 
 
 
-    /*
-     * تعداد ستون‌های LCD
+    /**
+     * @brief Number of LCD columns.
      *
-     * مثال:
+     * Examples:
      *
-     *      16
-     *      20
+     *      20 for 20x4 LCD
      *
+     *      16 for 16x2 LCD
      */
-    uint8_t cols;
+    uint8_t columns;
 
 
 
-    /*
-     * تعداد خطوط LCD
+    /**
+     * @brief Number of LCD rows.
      *
-     * مثال:
+     * Examples:
      *
-     *      2
-     *      4
+     *      4 for 20x4 LCD
      *
+     *      2 for 16x2 LCD
      */
     uint8_t rows;
 
 
 
-    /*
-     * وضعیت Backlight
-     *
-     * مقدار:
-     *
-     *      PCF8574_BL
-     *
-     * یا:
-     *
-     *      0
-     *
+    /**
+     * @brief Current backlight state.
      */
-    uint8_t backlight;
+    uint8_t backlight_state;
 
 
 
-    /*
-     * آخرین وضعیت کنترل نمایش
+    /**
+     * @brief Display control shadow register.
      *
-     * شامل:
+     * Stores:
      *
-     *      Display
-     *      Cursor
-     *      Blink
+     *      Display ON/OFF
      *
+     *      Cursor ON/OFF
+     *
+     *      Blink ON/OFF
      */
     uint8_t display_control;
 
 
 
-    /*
-     * حالت حرکت Cursor
+    /**
+     * @brief Display entry mode shadow register.
      *
-     * مثال:
+     * Controls:
      *
-     *      Increment Mode
+     *      Cursor direction
      *
+     *      Display shift
      */
     uint8_t display_mode;
 
@@ -679,32 +505,99 @@ typedef struct
 
 
 
-/* ==========================================================================
- *                         Public Function Prototypes
- *
- * توابع قابل استفاده در فایل‌های دیگر پروژه
- *
- * ========================================================================== */
 
 
 /* --------------------------------------------------------------------------
- * Initialization
+ * LCD Initialization API
  * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- * راه‌اندازی LCD
+ * @brief Initialize LCD module.
  *
- * @example
+ * @details
  *
- *      LCD_Init(&hi2c1, 0x27, 20, 4);
+ * This function:
+ *
+ *      - Stores LCD hardware configuration
+ *
+ *      - Initializes internal driver state
+ *
+ *      - Executes HD44780 initialization sequence
+ *
+ *      - Enables LCD display
+ *
+ *
+ * Supported modules:
+ *
+ *      20x4
+ *
+ *      16x2
+ *
+ *
+ * The LCD type is selected by:
+ *
+ *      columns
+ *
+ *      rows
+ *
+ *
+ * Example:
+ *
+ * For 20x4 LCD:
+ *
+ *
+ *      LCD_Init(
+ *          &hi2c1,
+ *          LCD_I2C_ADDRESS_DEFAULT,
+ *          20U,
+ *          4U);
+ *
+ *
+ *
+ * For 16x2 LCD:
+ *
+ *
+ *      LCD_Init(
+ *          &hi2c1,
+ *          LCD_I2C_ADDRESS_DEFAULT,
+ *          16U,
+ *          2U);
+ *
+ *
+ *
+ * @param hi2c
+ *      Pointer to STM32 HAL I2C handle.
+ *
+ *
+ * @param address
+ *      7-bit PCF8574 address.
+ *
+ *
+ * @param columns
+ *      LCD character width.
+ *
+ *
+ * @param rows
+ *      LCD number of lines.
+ *
+ *
+ * @return
+ *
+ *      HAL_OK:
+ *
+ *          LCD initialized successfully.
+ *
+ *
+ *      HAL_ERROR:
+ *
+ *          Invalid parameter.
  *
  */
-void LCD_Init(
+HAL_StatusTypeDef LCD_Init(
         I2C_HandleTypeDef *hi2c,
         uint8_t address,
-        uint8_t cols,
+        uint8_t columns,
         uint8_t rows);
 
 
@@ -712,121 +605,153 @@ void LCD_Init(
 
 
 /* --------------------------------------------------------------------------
- * Text And Number Printing
+ * Basic Text Output Functions
  * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- * چاپ رشته متنی
+ * @brief Print null terminated string.
  *
- * مثال:
+ * Example:
  *
- *      LCD_Print("Hello");
+ *      LCD_Print("Voltage Monitor");
  *
  */
-void LCD_Print(const char *str);
+void LCD_Print(const char *text);
+
 
 
 
 /**
- * @brief
- * چاپ یک کاراکتر
+ * @brief Print single character.
  *
- * مثال:
- *
- *      LCD_PrintChar('A');
- *
+ * @param character
+ *      ASCII character.
  */
-void LCD_PrintChar(char ch);
+void LCD_PrintChar(char character);
+
 
 
 
 /**
- * @brief
- * چاپ عدد صحیح
+ * @brief Print signed integer value.
  *
- * مثال:
+ * Example:
  *
- *      LCD_PrintNumber(123);
+ *      LCD_PrintNumber(220);
  *
  */
-void LCD_PrintNumber(int32_t number);
+void LCD_PrintNumber(int32_t value);
+
 
 
 
 /**
- * @brief
- * چاپ عدد اعشاری
+ * @brief Print floating point value.
  *
- * مثال:
+ * Example:
  *
- *      LCD_PrintFloat(220.5,1);
+ *      LCD_PrintFloat(220.5f,1);
  *
+ * Result:
+ *
+ *      220.5
  */
-void LCD_PrintFloat(float number, uint8_t decimals);
+void LCD_PrintFloat(
+        float value,
+        uint8_t decimals);
 
 
 
 
 
 /* --------------------------------------------------------------------------
- * Cursor Control
+ * Cursor Position Functions
  * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- * انتقال Cursor به موقعیت مشخص
+ * @brief Set LCD cursor position.
  *
- * مثال:
+ * @details
  *
- *      LCD_SetCursor(0,0);
+ * HD44780 does not use continuous memory
+ * addresses for LCD rows.
+ *
+ *
+ * Internal DDRAM mapping:
+ *
+ *
+ *      20x4 LCD:
+ *
+ *          Row 0 -> 0x00
+ *          Row 1 -> 0x40
+ *          Row 2 -> 0x14
+ *          Row 3 -> 0x54
+ *
+ *
+ *      16x2 LCD:
+ *
+ *          Row 0 -> 0x00
+ *          Row 1 -> 0x40
+ *
+ *
+ * The driver automatically selects the correct
+ * row address according to the configured
+ * number of rows.
+ *
+ *
+ * Application code does not need to change
+ * when replacing 20x4 with 16x2 LCD.
+ *
+ *
+ * @param column
+ *      Column number starting from zero.
+ *
+ *
+ * @param row
+ *      Row number starting from zero.
  *
  */
-void LCD_SetCursor(uint8_t col, uint8_t row);
+void LCD_SetCursor(
+        uint8_t column,
+        uint8_t row);
+
+
 
 
 
 /**
- * @brief
- * بازگشت Cursor به خانه اول
+ * @brief Return cursor to home position.
+ *
+ * The display content remains unchanged.
  *
  */
 void LCD_Home(void);
 
-/* ==========================================================================
- *                         Clear Functions
- *
- * توابع پاک‌سازی صفحه LCD
- *
- * ========================================================================== */
+
+
+
+
+/* --------------------------------------------------------------------------
+ * Display Clear Functions
+ * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- *   پاک کردن کامل صفحه LCD
+ * @brief Clear complete LCD display.
  *
  * @details
- *   این تابع:
  *
- *       1) تمام محتوای DDRAM را پاک می‌کند.
- *
- *       2) Cursor را به خانه اول برمی‌گرداند.
+ * Clears DDRAM memory and moves cursor
+ * to the home position.
  *
  *
- * @note
- *   دستور Clear Display یکی از کندترین دستورات LCD است.
+ * Note:
  *
- *   بنابراین بهتر است در حلقه‌های سریع مانند:
+ * HD44780 clear command requires extra time.
  *
- *       while(1)
- *
- *   به صورت مداوم استفاده نشود.
- *
- *
- *   برای نمایش مقادیر متغیر بهتر است فقط همان قسمت
- *   مورد نیاز Refresh شود.
+ * Avoid calling continuously in fast loops.
  *
  */
 void LCD_Clear(void);
@@ -836,35 +761,29 @@ void LCD_Clear(void);
 
 
 /**
- * @brief
- *   پاک کردن یک ردیف مشخص LCD
+ * @brief Clear one LCD row.
  *
  * @details
- *   این تابع کل صفحه را پاک نمی‌کند.
  *
- *   فقط یک خط را با کاراکتر Space پر می‌کند.
- *
- *
- *   برای کاربردهایی مانند:
- *
- *       نمایش ولتاژ
- *       نمایش زمان
- *       نمایش وضعیت سیستم
- *
- *   مناسب‌تر از LCD_Clear است.
+ * The function overwrites one complete row
+ * with spaces.
  *
  *
- * @param
- *   row:
+ * This is recommended for dynamic screens:
  *
- *       شماره ردیف از صفر شروع می‌شود.
+ *      - Voltage monitor
+ *      - Stream display
+ *      - Status display
  *
  *
- * @example
+ * Works with:
  *
- *      LCD_ClearRow(1);
+ *      - 20x4 LCD
+ *      - 16x2 LCD
  *
- *      خط دوم LCD پاک می‌شود.
+ *
+ * @param row
+ *      Row index.
  *
  */
 void LCD_ClearRow(uint8_t row);
@@ -873,22 +792,16 @@ void LCD_ClearRow(uint8_t row);
 
 
 
-/* ==========================================================================
- *                         Display Control
- *
- * کنترل نمایش، Cursor و Blink
- *
- * ========================================================================== */
+
+/* --------------------------------------------------------------------------
+ * Display Control Functions
+ * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- *   روشن کردن نمایش LCD
+ * @brief Turn display ON.
  *
- * @details
- *   اطلاعات داخل LCD پاک نمی‌شود.
- *
- *   فقط خروجی نمایش فعال می‌شود.
+ * Display memory remains unchanged.
  *
  */
 void LCD_DisplayOn(void);
@@ -898,13 +811,9 @@ void LCD_DisplayOn(void);
 
 
 /**
- * @brief
- *   خاموش کردن نمایش LCD
+ * @brief Turn display OFF.
  *
- * @details
- *   محتویات حافظه LCD باقی می‌ماند.
- *
- *   فقط نمایش روی صفحه خاموش می‌شود.
+ * Display memory remains unchanged.
  *
  */
 void LCD_DisplayOff(void);
@@ -914,11 +823,7 @@ void LCD_DisplayOff(void);
 
 
 /**
- * @brief
- *   فعال کردن Cursor زیرخطی
- *
- * @details
- *   Cursor به شکل یک خط زیر کاراکتر نمایش داده می‌شود.
+ * @brief Enable cursor display.
  *
  */
 void LCD_CursorOn(void);
@@ -928,8 +833,7 @@ void LCD_CursorOn(void);
 
 
 /**
- * @brief
- *   مخفی کردن Cursor
+ * @brief Disable cursor display.
  *
  */
 void LCD_CursorOff(void);
@@ -939,11 +843,7 @@ void LCD_CursorOff(void);
 
 
 /**
- * @brief
- *   فعال کردن چشمک Cursor
- *
- * @details
- *   Cursor به شکل مربع چشمک‌زن نمایش داده می‌شود.
+ * @brief Enable blinking cursor.
  *
  */
 void LCD_BlinkOn(void);
@@ -953,8 +853,7 @@ void LCD_BlinkOn(void);
 
 
 /**
- * @brief
- *   غیرفعال کردن چشمک Cursor
+ * @brief Disable blinking cursor.
  *
  */
 void LCD_BlinkOff(void);
@@ -963,21 +862,14 @@ void LCD_BlinkOff(void);
 
 
 
-/* ==========================================================================
- *                         Backlight Control
- *
- * کنترل نور پس‌زمینه
- *
- * ========================================================================== */
+
+/* --------------------------------------------------------------------------
+ * Backlight Control Functions
+ * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- *   روشن کردن LED نور پس‌زمینه LCD
- *
- * @example
- *
- *      LCD_BacklightOn();
+ * @brief Enable LCD backlight.
  *
  */
 void LCD_BacklightOn(void);
@@ -987,12 +879,7 @@ void LCD_BacklightOn(void);
 
 
 /**
- * @brief
- *   خاموش کردن LED نور پس‌زمینه LCD
- *
- * @example
- *
- *      LCD_BacklightOff();
+ * @brief Disable LCD backlight.
  *
  */
 void LCD_BacklightOff(void);
@@ -1001,49 +888,42 @@ void LCD_BacklightOff(void);
 
 
 
-/* ==========================================================================
- *                         Custom Character
- *
- * ساخت کاراکترهای اختصاصی LCD
- *
- * ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+ * Custom Character Functions
+ * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- *   ایجاد کاراکتر سفارشی در CGRAM
+ * @brief Create custom character in CGRAM.
  *
  * @details
- *   کنترلر HD44780 دارای حافظه‌ای به نام CGRAM است.
  *
- *   این حافظه اجازه می‌دهد تا 8 کاراکتر جدید بسازیم.
+ * HD44780 supports:
  *
- *
- *   هر کاراکتر:
- *
- *       8 بایت
- *
- *       هر بایت = یک ردیف 5 پیکسلی
+ *      8 custom characters
  *
  *
+ * Each character contains:
  *
- * @param
- *   location:
+ *      8 rows
  *
- *       شماره کاراکتر
- *
- *       محدوده:
- *
- *          0 تا 7
+ *      5 pixels per row
  *
  *
- * @param
- *   charmap:
+ * @param location
+ *      Character index:
  *
- *       آرایه 8 بایتی شکل کاراکتر
+ *          0 ... 7
  *
  *
- * @example
+ * @param pattern
+ *      Character bitmap data.
+ *
+ *
+ * Example:
+ *
  *
  *      uint8_t battery[8] =
  *      {
@@ -1058,52 +938,41 @@ void LCD_BacklightOff(void);
  *      };
  *
  *
- *      LCD_CreateChar(0, battery);
+ *      LCD_CreateChar(0,battery);
  *
  */
-void LCD_CreateChar(uint8_t location, uint8_t charmap[]);
+void LCD_CreateChar(
+        uint8_t location,
+        uint8_t pattern[]);
 
 
 
 
 
 /**
- * @brief
- *   نمایش کاراکتر سفارشی
+ * @brief Print previously created custom character.
  *
- * @param
- *   location:
+ * @param location
+ *      Character index:
  *
- *       شماره کاراکتر ساخته شده
- *
- *
- * @example
- *
- *      LCD_PrintCustomChar(0);
+ *          0 ... 7
  *
  */
-void LCD_PrintCustomChar(uint8_t location);
+void LCD_PrintCustomChar(
+        uint8_t location);
 
 
 
 
 
-/* ==========================================================================
- *                         Scroll Functions
- *
- * حرکت دادن محتوای LCD
- *
- * ========================================================================== */
+
+/* --------------------------------------------------------------------------
+ * Display Shift Functions
+ * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- *   حرکت صفحه به سمت چپ
- *
- * @details
- *   محتویات LCD جابه‌جا می‌شود.
- *
- *   اطلاعات حذف نمی‌شود.
+ * @brief Shift complete display content left.
  *
  */
 void LCD_ScrollLeft(void);
@@ -1113,8 +982,7 @@ void LCD_ScrollLeft(void);
 
 
 /**
- * @brief
- *   حرکت صفحه به سمت راست
+ * @brief Shift complete display content right.
  *
  */
 void LCD_ScrollRight(void);
@@ -1123,54 +991,40 @@ void LCD_ScrollRight(void);
 
 
 
-/* ==========================================================================
- *                         Low Level API
+
+
+/* --------------------------------------------------------------------------
+ * Low Level Command Interface
  *
- * توابع سطح پایین
+ * These functions are intended for advanced users.
  *
- * ========================================================================== */
+ * Normal application code should use:
+ *
+ *      LCD_Clear()
+ *      LCD_SetCursor()
+ *      LCD_Print()
+ *
+ * -------------------------------------------------------------------------- */
 
 
 /**
- * @brief
- *   ارسال مستقیم دستور به LCD
+ * @brief Send raw HD44780 command.
  *
- * @details
- *   این تابع برای کاربران پیشرفته است.
- *
- *   در برنامه معمولی بهتر است از توابع آماده
- *   مانند:
- *
- *       LCD_Clear()
- *       LCD_SetCursor()
- *
- * استفاده شود.
- *
- *
- * @param
- *   cmd:
- *
- *       دستور HD44780
+ * @param command
+ *      LCD controller command.
  *
  */
-void LCD_SendCommand(uint8_t cmd);
+void LCD_SendCommand(uint8_t command);
 
 
 
 
 
 /**
- * @brief
- *   ارسال مستقیم داده به LCD
+ * @brief Send raw data byte.
  *
- * @details
- *   برای ارسال یک کاراکتر خام استفاده می‌شود.
- *
- *
- * @param
- *   data:
- *
- *       مقدار ASCII کاراکتر
+ * @param data
+ *      ASCII data byte.
  *
  */
 void LCD_SendData(uint8_t data);
@@ -1179,42 +1033,159 @@ void LCD_SendData(uint8_t data);
 
 
 
-/* ==========================================================================
- *                         Example Usage
+
+/* --------------------------------------------------------------------------
+ * LCD Information Functions
  *
- * مثال استفاده سریع
+ * These functions allow application code
+ * to read current LCD configuration.
  *
- * ========================================================================== */
+ * Useful when supporting multiple LCD sizes.
+ * -------------------------------------------------------------------------- */
 
 
-/*
+/**
+ * @brief Get configured LCD column count.
  *
- * در بخش USER CODE BEGIN 2:
+ * @return
+ *
+ *      Number of columns.
+ *
+ */
+uint8_t LCD_GetColumns(void);
+
+
+
+
+
+/**
+ * @brief Get configured LCD row count.
+ *
+ * @return
+ *
+ *      Number of rows.
+ *
+ */
+uint8_t LCD_GetRows(void);
+
+
+
+
+
+/**
+ * @brief Get current PCF8574 address.
+ *
+ * @return
+ *
+ *      7-bit I2C address.
+ *
+ */
+uint8_t LCD_GetAddress(void);
+
+
+
+
+
+
+/* --------------------------------------------------------------------------
+ * Driver State Management
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @brief Reset internal LCD driver state.
+ *
+ * @details
+ *
+ * This function clears the internal driver context.
+ *
+ * Useful when:
+ *
+ *      - LCD module is disconnected
+ *      - I2C recovery is required
+ *      - Driver restart is needed
+ *
+ */
+void LCD_ResetState(void);
+
+
+
+
+
+/**
+ * @brief Check LCD driver initialization status.
+ *
+ * @return
+ *
+ *      1  LCD initialized
+ *
+ *      0  LCD not initialized
+ *
+ */
+uint8_t LCD_IsReady(void);
+
+
+
+
+
+
+
+/* --------------------------------------------------------------------------
+ * Usage Example
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @example
  *
  *
- *      LCD_Init(&hi2c1, LCD_I2C_ADDR_DEFAULT, 20, 4);
+ * Example 1:
  *
- *      LCD_BacklightOn();
- *
- *
- *      LCD_SetCursor(0,0);
- *
- *      LCD_Print("Voltage Logger");
+ *      20x4 LCD configuration
  *
  *
+ *      LCD_Init(
+ *          &hi2c1,
+ *          LCD_I2C_ADDRESS_DEFAULT,
+ *          LCD_DEFAULT_COLUMNS_20X4,
+ *          LCD_DEFAULT_ROWS_20X4);
  *
  *
- * در حلقه اصلی:
+ *
+ * Example 2:
  *
  *
- *      LCD_SetCursor(0,1);
+ *      16x2 LCD configuration
  *
- *      LCD_Print("Vin:");
  *
- *      LCD_PrintFloat(220.5,1);
+ *      LCD_Init(
+ *          &hi2c1,
+ *          LCD_I2C_ADDRESS_DEFAULT,
+ *          LCD_DEFAULT_COLUMNS_16X2,
+ *          LCD_DEFAULT_ROWS_16X2);
  *
- *      LCD_Print("V");
  *
+ *
+ *
+ * When changing LCD size:
+ *
+ *
+ *      Only LCD_Init() parameters need to change.
+ *
+ *
+ * No modification is required in:
+ *
+ *      - lcd_i2c.c
+ *      - lcd_display.c
+ *      - menu.c
+ *
+ *
+ * The driver automatically handles:
+ *
+ *      - DDRAM row addressing
+ *      - Cursor limitation
+ *      - Row clearing
+ *      - Column limitation
  *
  */
 
@@ -1222,10 +1193,228 @@ void LCD_SendData(uint8_t data);
 
 
 
-/* ==========================================================================
- *                         End Of Header File
+
+
+/* --------------------------------------------------------------------------
+ * Hardware Configuration Notes
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @note
  *
- * ========================================================================== */
+ * LCD I2C Address Configuration:
+ *
+ *
+ * The address depends on the PCF8574
+ * backpack solder jumpers.
+ *
+ *
+ *
+ * Common addresses:
+ *
+ *
+ * PCF8574:
+ *
+ *      0x20 - 0x27
+ *
+ *
+ * PCF8574A:
+ *
+ *      0x38 - 0x3F
+ *
+ *
+ *
+ * Example:
+ *
+ *
+ *      LCD_I2C_ADDRESS_DEFAULT = 0x27
+ *
+ *
+ *
+ * IMPORTANT:
+ *
+ * The value is a 7-bit I2C address.
+ *
+ *
+ * STM32 HAL automatically performs:
+ *
+ *
+ *      Address << 1
+ *
+ *
+ * Example:
+ *
+ *
+ *      0x27 << 1 = 0x4E
+ *
+ *
+ * User should NOT enter 0x4E.
+ *
+ */
+
+
+
+
+
+/**
+ * @note
+ *
+ * LCD Size Configuration:
+ *
+ *
+ * This driver supports:
+ *
+ *
+ *      20 columns x 4 rows
+ *
+ *      16 columns x 2 rows
+ *
+ *
+ *
+ * Recommended configuration:
+ *
+ *
+ * For 20x4 LCD:
+ *
+ *      LCD_DEFAULT_COLUMNS = 20
+ *
+ *      LCD_DEFAULT_ROWS    = 4
+ *
+ *
+ *
+ * For 16x2 LCD:
+ *
+ *      LCD_DEFAULT_COLUMNS = 16
+ *
+ *      LCD_DEFAULT_ROWS    = 2
+ *
+ *
+ *
+ * Changing the display size does not require
+ * modification of the driver source code.
+ *
+ * Only the configuration values must change.
+ *
+ */
+
+
+
+
+
+
+
+/* --------------------------------------------------------------------------
+ * Driver Design Notes
+ * -------------------------------------------------------------------------- */
+
+
+/**
+ * @note
+ *
+ * This driver is designed for one LCD instance.
+ *
+ *
+ * Multiple LCD modules require:
+ *
+ *      - Multiple LCD_HandleTypeDef objects
+ *      - Separate I2C addresses
+ *      - Extended driver management
+ *
+ */
+
+
+
+
+
+/**
+ * @note
+ *
+ * Character LCD refresh:
+ *
+ *
+ * Character LCD modules are slow compared
+ * with STM32 execution speed.
+ *
+ *
+ * Avoid:
+ *
+ *
+ *      LCD_Clear()
+ *
+ *
+ * inside fast update loops.
+ *
+ *
+ * Recommended method:
+ *
+ *
+ *      LCD_SetCursor()
+ *
+ *      LCD_ClearRow()
+ *
+ *      LCD_Print()
+ *
+ *
+ * Benefits:
+ *
+ *      - No display flicker
+ *      - Lower I2C traffic
+ *      - Faster UI response
+ *
+ */
+
+
+
+
+
+/**
+ * @note
+ *
+ * Thread safety:
+ *
+ *
+ * This driver is not designed for concurrent
+ * access from multiple tasks.
+ *
+ *
+ * If RTOS support is added:
+ *
+ *      Protect LCD functions with mutex.
+ *
+ */
+
+
+
+
+
+
+/* --------------------------------------------------------------------------
+ * Header End
+ * -------------------------------------------------------------------------- */
 
 
 #endif /* LCD_I2C_H */
+
+
+
+/******************************************************************************
+ *
+ *                      END OF FILE
+ *
+ *
+ *      lcd_i2c.h
+ *
+ *
+ *      STM32F103C8T6
+ *
+ *              +
+ *
+ *      PCF8574 I2C Backpack
+ *
+ *              +
+ *
+ *      HD44780 Character LCD
+ *
+ *
+ ******************************************************************************/
