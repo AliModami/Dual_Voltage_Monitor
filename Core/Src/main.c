@@ -39,7 +39,8 @@
 /* USER CODE BEGIN Includes */
 
 #include <stdio.h>
-#include <lcd_i2c.h>
+#include "lcd_i2c.h"
+#include "lcd_display.h"
 #include <menu_types.h>
 #include "buzzer.h"
 #include "buttons.h"
@@ -144,24 +145,60 @@ int main(void)
 
 
   // ( Handler I2C1، Address, Columns، Rows )َ
-  LCD_Init(&hi2c1, 0x27, 20, 4);
+  //LCD_Init(&hi2c1, 0x27, 20, 4);
 
 
 
 
-  LCD_Clear();
-  HAL_Delay(5);
+
+  //---------------------------------------------
+
+  LCD_Display_Init(&hi2c1);
+
+
+
+  LCD_Display_ShowTitle(
+          "Main Menu");
+
+
+
+  LCD_Display_PrintLine(
+          1,
+          "Hello STM32!");
+
+
+
+  LCD_Display_PrintLine(
+          2,
+          "Line 3 Test");
+
+
+
+  LCD_Display_PrintLine(
+          3,
+          "Display Layer OK");
+
+
+  //----------------------------------------------
+
+
+
+
+
+
+  //LCD_Clear();
+  //HAL_Delay(5);
 
 
 //------------ LCD Test Line Begin --------------------------
-  LCD_SetCursor(0, 0);
-  LCD_Print("Hello STM32!");
-  LCD_SetCursor(0, 1);       // Line2
-  LCD_Print("Line 2!");
-  LCD_SetCursor(0, 2);       // Line2
-  LCD_Print("Line 3!");
-  LCD_SetCursor(0, 3);       // Line2
-  LCD_Print("Line 4!");
+//  LCD_SetCursor(0, 0);
+//  LCD_Print("Hello STM32!");
+//  LCD_SetCursor(0, 1);       // Line2
+//  LCD_Print("Line 2!");
+//  LCD_SetCursor(0, 2);       // Line2
+//  LCD_Print("Line 3!");
+//  LCD_SetCursor(0, 3);       // Line2
+//  LCD_Print("Line 4!");
 //------------ LCD Test Line END ----------------------------
 
 
