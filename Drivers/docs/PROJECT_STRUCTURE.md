@@ -164,7 +164,6 @@ App
 │
 ├── adc
 ├── buttons
-├── button_app
 ├── buzzer
 ├── config
 ├── display

@@ -527,7 +527,7 @@ App
 | Module | توضیح |
 |---------|-------|
 | buttons | مدیریت کلیدهای فشاری |
-| button_app | تبدیل Event به فرمان‌های نرم‌افزار |
+
 | buzzer | مدیریت الگوهای صوتی |
 | lcd_i2c | Driver نمایشگر کاراکتری |
 | lcd_display | لایه انتزاعی نمایشگر |
@@ -613,7 +613,7 @@ docs
 ```
 buttons.c
 
-button_app.c
+
 
 menu_renderer.c
 
@@ -897,7 +897,7 @@ while(1)
 {
     Buttons_Task();
 
-    ButtonApp_Task();
+   
 
     Menu_Task();
 

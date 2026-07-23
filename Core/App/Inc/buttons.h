@@ -1,253 +1,726 @@
-/**
- ******************************************************************************
- * @file       buttons.h
- * @brief      درایور دکمه‌های فشاری با Debounce و Event Queue
+/******************************************************************************
  *
- * @details
- *   این هدر فایل رابط عمومی (Public API) درایور دکمه‌ها را تعریف می‌کند.
- *   تمام ماژول‌های برنامه باید از طریق همین API با دکمه‌ها کار کنند
- *   و هیچ‌وقت مستقیماً GPIO نخوانند.
+ * @file    buttons.h
  *
- * ─────────────────────────────────────────────────────────────────────────
- * @hardware   اتصال سخت‌افزاری
- * ─────────────────────────────────────────────────────────────────────────
+ * @brief   Push Button Driver Public Interface
  *
- *   Blue Pill         دکمه
- *   ────────          ──────────────────────
- *   PB12       ←      ENTER   (Pull-Up خارجی یا داخلی)
- *   PB13       ←      DOWN
- *   PB14       ←      UP
- *   PB15       ←      BACK
- *   GND        ←      طرف دیگر همه دکمه‌ها
+ *------------------------------------------------------------------------------
  *
- *   چون Pull-Up داریم:
- *       دکمه رها = GPIO_PIN_SET   (HIGH = 3.3V)
- *       دکمه فشار = GPIO_PIN_RESET (LOW  = 0V)
+ * Project:
  *
- * ─────────────────────────────────────────────────────────────────────────
- * @cubemx     تنظیم در CubeMX
- * ─────────────────────────────────────────────────────────────────────────
+ *      Dual Voltage Monitor
  *
- *   PB12, PB13, PB14, PB15:
- *       Mode       : GPIO_Input
- *       Pull       : Pull-up   ← اگر مقاومت خارجی نداری
- *       User Label : BTN_ENTER, BTN_DOWN, BTN_UP, BTN_BACK
+ *------------------------------------------------------------------------------
  *
- * ─────────────────────────────────────────────────────────────────────────
- * @api        فهرست توابع قابل استفاده
- * ─────────────────────────────────────────────────────────────────────────
+ * MCU:
  *
- *   [راه‌اندازی — یک‌بار در USER CODE BEGIN 2]
+ *      STM32F103C8T6 (Blue Pill)
  *
- *   Buttons_Init()
- *       → همه state machine ها و صف رویداد را مقداردهی اولیه می‌کند
- *       → GPIO را تغییر نمی‌دهد (CubeMX این کار را کرده)
+ *------------------------------------------------------------------------------
  *
- *   ────────────────────────────────────────────────────────────────────
+ * Framework:
  *
- *   [پردازش — هر دور در USER CODE BEGIN 3]
+ *      STM32 HAL
  *
- *   Buttons_Task()
- *       → باید در هر دور حلقه while(1) فراخوانی شود
- *       → GPIO می‌خواند، debounce می‌کند، رویداد تولید می‌کند
- *       → مثال:
- *             while(1) {
- *                 Buttons_Task();      ← هر دور
- *                 Menu_Task();
- *             }
+ *------------------------------------------------------------------------------
  *
- *   ────────────────────────────────────────────────────────────────────
+ * Description:
  *
- *   [دریافت رویداد]
+ *      This file defines the public interface of the push button driver.
  *
- *   Buttons_GetEvent(Button_Event_t *event)
- *       → یک رویداد از صف خارج می‌کند
- *       → اگر رویدادی باشد true برمی‌گرداند
- *       → مثال:
- *             Button_Event_t ev;
- *             if (Buttons_GetEvent(&ev)) {
- *                 if (ev.button == BUTTON_ID_UP &&
- *                     ev.event  == BUTTON_EVENT_PRESS) {
- *                     // دکمه UP فشار داده شد
- *                 }
- *             }
  *
- *   Buttons_Flush()
- *       → همه رویدادهای موجود در صف را پاک می‌کند
- *       → مفید هنگام تغییر صفحه منو
+ *      The button driver provides a hardware abstraction layer between
+ *      physical GPIO inputs and application software.
  *
- *   Buttons_IsPressed(Button_Id_t button)
- *       → وضعیت لحظه‌ای دکمه را برمی‌گرداند (بدون debounce)
- *       → فقط برای بررسی سریع — برای منو از GetEvent استفاده کن
- *       → مثال:
- *             if (Buttons_IsPressed(BUTTON_ID_ENTER)) { ... }
  *
- * ─────────────────────────────────────────────────────────────────────────
- * @events     انواع رویدادها
- * ─────────────────────────────────────────────────────────────────────────
+ *      Application modules must never access button GPIO pins directly.
  *
- *   BUTTON_EVENT_PRESS        دکمه فشار داده شد (لبه نزولی — یک‌بار)
- *   BUTTON_EVENT_RELEASE      دکمه رها شد       (لبه صعودی — یک‌بار)
- *   BUTTON_EVENT_LONG_PRESS   فشار طولانی        (بعد از 800ms — یک‌بار)
- *   BUTTON_EVENT_REPEAT       تکرار خودکار       (هر 200ms در long press)
+ *      All button interactions must be performed through this API.
  *
- * ─────────────────────────────────────────────────────────────────────────
- * @example    مثال کامل استفاده در منو
- * ─────────────────────────────────────────────────────────────────────────
  *
- *   // USER CODE BEGIN 2
- *   Buttons_Init();
+ *------------------------------------------------------------------------------
  *
- *   // USER CODE BEGIN 3  (داخل while(1))
- *   Buttons_Task();
+ * Driver Responsibilities:
  *
- *   Button_Event_t ev;
- *   if (Buttons_GetEvent(&ev))
- *   {
- *       switch (ev.button)
- *       {
- *           case BUTTON_ID_UP:
- *               if (ev.event == BUTTON_EVENT_PRESS ||
- *                   ev.event == BUTTON_EVENT_REPEAT)
- *                   Menu_NavigateUp();
- *               break;
+ *      - Reading physical button inputs
  *
- *           case BUTTON_ID_DOWN:
- *               if (ev.event == BUTTON_EVENT_PRESS ||
- *                   ev.event == BUTTON_EVENT_REPEAT)
- *                   Menu_NavigateDown();
- *               break;
+ *      - Software debounce processing
  *
- *           case BUTTON_ID_ENTER:
- *               if (ev.event == BUTTON_EVENT_PRESS)
- *                   Menu_Enter();
- *               break;
+ *      - Detecting valid button press events
  *
- *           case BUTTON_ID_BACK:
- *               if (ev.event == BUTTON_EVENT_PRESS)
- *                   Menu_Back();
- *               break;
- *       }
- *   }
+ *      - Providing event based communication with application layer
  *
- * ─────────────────────────────────────────────────────────────────────────
- * @version    1.1.0
- * @date       2025
- * @note       نیاز به stm32f1xx_hal.h و stdbool.h دارد
- ******************************************************************************
- */
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Software Architecture:
+ *
+ *
+ *              Physical Buttons
+ *
+ *                     |
+ *                     |
+ *                     v
+ *
+ *              +---------------+
+ *              |   buttons.c   |
+ *              |---------------|
+ *              | GPIO Reading  |
+ *              | Debounce FSM  |
+ *              | Event Queue   |
+ *              +---------------+
+ *
+ *                     |
+ *                     |
+ *                     v
+ *
+ *              Button_Event_t
+ *
+ *                     |
+ *                     |
+ *                     v
+ *
+ *              Application Layer
+ *
+ *                     |
+ *                     |
+ *                     v
+ *
+ *              Menu Controller
+ *
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Design Principles:
+ *
+ *      1.
+ *      Hardware details are isolated inside the driver.
+ *
+ *
+ *      2.
+ *      Application works with logical button IDs only.
+ *
+ *
+ *      3.
+ *      Mechanical switch noise is handled internally.
+ *
+ *
+ *      4.
+ *      No blocking delay is used.
+ *
+ *
+ *      5.
+ *      Driver is designed for periodic polling.
+ *
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Example Usage:
+ *
+ *
+ *      int main(void)
+ *      {
+ *
+ *          HAL_Init();
+ *
+ *          MX_GPIO_Init();
+ *
+ *          Buttons_Init();
+ *
+ *
+ *          while(1)
+ *          {
+ *
+ *              Buttons_Task();
+ *
+ *
+ *              Button_Event_t event;
+ *
+ *
+ *              if(Buttons_GetEvent(&event))
+ *              {
+ *
+ *                  switch(event.button)
+ *                  {
+ *
+ *                      case BUTTON_ID_UP:
+ *
+ *                          Menu_MoveUp();
+ *
+ *                          break;
+ *
+ *
+ *                      case BUTTON_ID_DOWN:
+ *
+ *                          Menu_MoveDown();
+ *
+ *                          break;
+ *
+ *
+ *                      case BUTTON_ID_ENTER:
+ *
+ *                          Menu_Select();
+ *
+ *                          break;
+ *
+ *
+ *                      case BUTTON_ID_BACK:
+ *
+ *                          Menu_Back();
+ *
+ *                          break;
+ *
+ *                  }
+ *
+ *              }
+ *
+ *          }
+ *
+ *      }
+ *
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Author:
+ *
+ *      Ali Modami & ChatGPT
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Version:
+ *
+ *      2.0.0
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Change History:
+ *
+ *
+ *      Version 2.0.0
+ *
+ *          - Simplified event model
+ *
+ *          - Removed application dependency
+ *
+ *          - Prepared for Page Based Menu architecture
+ *
+ *          - Improved documentation
+ *
+ *
+ *      Version 1.x
+ *
+ *          - Initial button driver implementation
+ *
+ *
+ ******************************************************************************/
 
-/* جلوگیری از include شدن چندباره */
+
+
 #ifndef BUTTONS_H
 #define BUTTONS_H
 
-/* ──────────────────────────────────────────────────────────────────────────
- * وابستگی‌ها
- * ────────────────────────────────────────────────────────────────────────── */
-#include "stm32f1xx_hal.h"  /* برای GPIO و HAL_GetTick */
-#include <stdbool.h>         /* برای bool، true، false */
-#include <stdint.h>          /* برای uint8_t، uint32_t */
 
-/* ──────────────────────────────────────────────────────────────────────────
- * تنظیمات سخت‌افزاری — اینجا پایه‌ها را تغییر بده
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+
+
+/******************************************************************************
+ *                              Include Files
+ ******************************************************************************/
+
+
+#include "stm32f1xx_hal.h"
+
+
+#include <stdbool.h>
+
+
+#include <stdint.h>
+
+
+
+
+
+/******************************************************************************
+ *                         Hardware Configuration
+ ******************************************************************************/
+
+/*
+ * ============================================================================
  *
- * اگر پایه‌های متفاوتی داری، فقط همین بخش را عوض کن.
- * بقیه کد نیازی به تغییر ندارد.
- * ────────────────────────────────────────────────────────────────────────── */
-#define BTN_UP_PORT        GPIOB
-#define BTN_UP_PIN         GPIO_PIN_14
-
-#define BTN_DOWN_PORT      GPIOB
-#define BTN_DOWN_PIN       GPIO_PIN_13
-
-#define BTN_ENTER_PORT     GPIOB
-#define BTN_ENTER_PIN      GPIO_PIN_12
-
-#define BTN_BACK_PORT      GPIOB
-#define BTN_BACK_PIN       GPIO_PIN_15
-
-/* ──────────────────────────────────────────────────────────────────────────
- * تنظیمات زمان‌بندی — اینجا رفتار دکمه‌ها را تنظیم کن
- * ────────────────────────────────────────────────────────────────────────── */
-
-/** حداقل زمان پایدار برای تأیید فشار (میلی‌ثانیه) — ضد باونس */
-#define BTN_DEBOUNCE_MS         30U
-
-/** مدت نگه‌داشتن برای تشخیص Long Press (میلی‌ثانیه) */
-#define BTN_LONG_PRESS_MS      800U
-
-/** تأخیر قبل از شروع تکرار خودکار (میلی‌ثانیه) */
-#define BTN_REPEAT_START_MS    800U
-
-/** فاصله بین رویدادهای تکرار خودکار (میلی‌ثانیه) */
-#define BTN_REPEAT_PERIOD_MS   200U
-
-/** حداکثر تعداد رویداد در صف FIFO */
-#define BTN_QUEUE_SIZE          16U
-
-/* ──────────────────────────────────────────────────────────────────────────
- * شناسه دکمه‌ها (Button ID)
+ * Button Hardware Mapping
  *
- * از این enum در کدت استفاده کن — نه از عدد مستقیم.
- * مثال: ev.button == BUTTON_ID_UP
- * ────────────────────────────────────────────────────────────────────────── */
+ * ============================================================================
+ *
+ *
+ * Hardware connection:
+ *
+ *
+ *          STM32F103C8T6
+ *
+ *
+ *              PB14  ---- UP Button
+ *
+ *              PB13  ---- DOWN Button
+ *
+ *              PB12  ---- ENTER Button
+ *
+ *              PB15  ---- BACK Button
+ *
+ *
+ *
+ * Electrical configuration:
+ *
+ *
+ *              GPIO ---- Button ---- GND
+ *
+ *
+ * Internal Pull-Up configuration:
+ *
+ *
+ *              Button Released:
+ *
+ *                  GPIO = HIGH
+ *
+ *
+ *              Button Pressed:
+ *
+ *                  GPIO = LOW
+ *
+ *
+ * The driver converts this electrical behavior into
+ * logical button events.
+ *
+ *
+ * Application does not need to know about Active Low logic.
+ *
+ * ============================================================================
+ */
+
+
+
+#define BUTTON_UP_PORT          GPIOB
+#define BUTTON_UP_PIN           GPIO_PIN_14
+
+
+
+#define BUTTON_DOWN_PORT        GPIOB
+#define BUTTON_DOWN_PIN         GPIO_PIN_13
+
+
+
+#define BUTTON_ENTER_PORT       GPIOB
+#define BUTTON_ENTER_PIN        GPIO_PIN_12
+
+
+
+#define BUTTON_BACK_PORT        GPIOB
+#define BUTTON_BACK_PIN         GPIO_PIN_15
+
+
+
+
+
+/******************************************************************************
+ *                         Driver Configuration
+ ******************************************************************************/
+
+/*
+ * ============================================================================
+ *
+ * Timing Configuration
+ *
+ * ============================================================================
+ *
+ * All values are expressed in milliseconds.
+ *
+ * These parameters define the response characteristics
+ * of the button driver.
+ *
+ * ============================================================================
+ */
+
+
+
+/*
+ * Minimum stable time required before accepting
+ * a GPIO transition as a valid button press.
+ *
+ *
+ * Larger value:
+ *
+ *      + Better noise rejection
+ *
+ *      - Slower response
+ *
+ */
+#define BUTTON_DEBOUNCE_TIME_MS      20U
+
+
+
+
+/*
+ * Maximum number of pending events stored internally.
+ *
+ * Circular buffer is used internally.
+ *
+ */
+#define BUTTON_EVENT_QUEUE_SIZE      16U
+
+
+
+
+
+/******************************************************************************
+ *                         Button Identification
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Logical button identifiers.
+ *
+ *
+ * @details
+ *
+ *      These identifiers represent buttons from the
+ *      application point of view.
+ *
+ *      Hardware pins are hidden inside buttons.c.
+ *
+ *
+ * Example:
+ *
+ *
+ *      if(event.button == BUTTON_ID_ENTER)
+ *      {
+ *
+ *          Open selected menu item;
+ *
+ *      }
+ *
+ */
 typedef enum
 {
-    BUTTON_ID_UP    = 0,  /* دکمه بالا   — پیمایش به بالا در منو */
-    BUTTON_ID_DOWN  = 1,  /* دکمه پایین  — پیمایش به پایین در منو */
-    BUTTON_ID_ENTER = 2,  /* دکمه انتخاب — ورود به زیرمنو یا تأیید */
-    BUTTON_ID_BACK  = 3,  /* دکمه برگشت  — خروج از زیرمنو */
 
-    BUTTON_ID_COUNT = 4   /* تعداد کل دکمه‌ها — برای حلقه‌ها استفاده می‌شود */
+    /*
+     * Move cursor upward.
+     */
+    BUTTON_ID_UP = 0U,
+
+
+
+    /*
+     * Move cursor downward.
+     */
+    BUTTON_ID_DOWN,
+
+
+
+    /*
+     * Confirm selection.
+     */
+    BUTTON_ID_ENTER,
+
+
+
+    /*
+     * Return to previous menu page.
+     */
+    BUTTON_ID_BACK,
+
+
+
+    /*
+     * Number of available buttons.
+     *
+     * Used internally for array sizing.
+     */
+    BUTTON_ID_COUNT
+
+
 } Button_Id_t;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * انواع رویداد دکمه (Button Event Type)
+
+
+
+
+/******************************************************************************
+ *                         Button Event Definition
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Button event types generated by driver.
  *
- * هر فشار دکمه می‌تواند چند نوع رویداد تولید کند.
- * ────────────────────────────────────────────────────────────────────────── */
+ *
+ * @details
+ *
+ *      The driver converts raw GPIO changes into
+ *      clean software events.
+ *
+ *
+ *      Example:
+ *
+ *          Mechanical switch:
+ *
+ *              HIGH LOW HIGH LOW HIGH
+ *
+ *
+ *          After debounce:
+ *
+ *              BUTTON_EVENT_PRESS
+ *
+ *
+ */
 typedef enum
 {
-    BUTTON_EVENT_PRESS      = 0,  /* لحظه فشار — یک‌بار در ابتدا */
-    BUTTON_EVENT_RELEASE    = 1,  /* لحظه رها شدن — یک‌بار */
-    BUTTON_EVENT_LONG_PRESS = 2,  /* نگه‌داشتن طولانی — یک‌بار بعد از 800ms */
-    BUTTON_EVENT_REPEAT     = 3,  /* تکرار خودکار — هر 200ms در long press */
+
+    /*
+     * No valid event.
+     */
+    BUTTON_EVENT_NONE = 0U,
+
+
+
+    /*
+     * Valid button press event.
+     *
+     * This is the main event used by menu system.
+     */
+    BUTTON_EVENT_PRESS
+
+
 } Button_EventType_t;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * ساختار رویداد دکمه
+
+
+
+/**
+ * @brief
+ *      Button event data container.
  *
- * این struct اطلاعات یک رویداد را نگه می‌دارد.
- * مثال استفاده:
- *   Button_Event_t ev;
- *   if (Buttons_GetEvent(&ev)) {
- *       // ev.button = کدام دکمه؟
- *       // ev.event  = چه اتفاقی افتاد؟
- *   }
- * ────────────────────────────────────────────────────────────────────────── */
+ *
+ * @details
+ *
+ *      Every generated event contains:
+ *
+ *          - Source button
+ *
+ *          - Event type
+ *
+ *
+ * Example:
+ *
+ *
+ *      Button_Event_t event;
+ *
+ *
+ *      if(Buttons_GetEvent(&event))
+ *      {
+ *
+ *          if(event.button == BUTTON_ID_BACK)
+ *          {
+ *
+ *              Menu_Back();
+ *
+ *          }
+ *
+ *      }
+ *
+ */
 typedef struct
 {
-    Button_Id_t        button;  /* کدام دکمه رویداد داشت */
-    Button_EventType_t event;   /* نوع رویداد */
+
+    /*
+     * Logical button source.
+     */
+    Button_Id_t button;
+
+
+
+    /*
+     * Generated button action.
+     */
+    Button_EventType_t event;
+
+
 } Button_Event_t;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * اعلام توابع عمومی (Public API)
- * ────────────────────────────────────────────────────────────────────────── */
 
-/* راه‌اندازی — یک‌بار در USER CODE BEGIN 2 */
+
+/******************************************************************************
+ *                         Public API Functions
+ ******************************************************************************/
+
+/**
+ * @brief
+ *      Initialize button driver.
+ *
+ * @details
+ *
+ *      This function must be called once during system startup.
+ *
+ *      Responsibilities:
+ *
+ *          - Initialize internal button states
+ *          - Clear event queue
+ *          - Prepare driver runtime context
+ *
+ *
+ *      Note:
+ *
+ *          GPIO configuration is NOT performed here.
+ *
+ *          GPIO initialization must be handled by STM32CubeMX
+ *          generated code.
+ *
+ *
+ * Example:
+ *
+ *      int main(void)
+ *      {
+ *          HAL_Init();
+ *
+ *          MX_GPIO_Init();
+ *
+ *          Buttons_Init();
+ *
+ *          while(1)
+ *          {
+ *              Buttons_Task();
+ *          }
+ *      }
+ *
+ */
 void Buttons_Init(void);
 
-/* پردازش — هر دور در while(1) */
+
+
+/**
+ * @brief
+ *      Periodic execution function of button driver.
+ *
+ * @details
+ *
+ *      This function must be called continuously from the main loop.
+ *
+ *
+ *      It performs:
+ *
+ *          - GPIO sampling
+ *          - Debounce processing
+ *          - State machine update
+ *          - Event generation
+ *
+ *
+ *      The function is non-blocking.
+ *
+ *
+ * Example:
+ *
+ *      while(1)
+ *      {
+ *          Buttons_Task();
+ *
+ *          Menu_Task();
+ *      }
+ *
+ */
 void Buttons_Task(void);
 
-/* دریافت رویداد از صف */
+
+
+/**
+ * @brief
+ *      Read next button event from internal queue.
+ *
+ * @param event
+ *      Pointer to destination event structure.
+ *
+ * @return
+ *
+ *      true:
+ *          A valid event was received.
+ *
+ *      false:
+ *          Queue is empty or parameter is invalid.
+ *
+ *
+ * Example:
+ *
+ *      Button_Event_t event;
+ *
+ *      if(Buttons_GetEvent(&event))
+ *      {
+ *          if(event.button == BUTTON_ID_ENTER)
+ *          {
+ *              MenuController_Enter();
+ *          }
+ *      }
+ *
+ */
 bool Buttons_GetEvent(Button_Event_t *event);
 
-/* پاک کردن همه رویدادهای صف — هنگام تغییر صفحه */
+
+
+/**
+ * @brief
+ *      Remove all pending button events.
+ *
+ * @details
+ *
+ *      Useful when changing application mode or menu page.
+ *
+ *      Example:
+ *
+ *          MenuController_OpenPage();
+ *
+ *          Buttons_Flush();
+ *
+ */
 void Buttons_Flush(void);
 
-/* خواندن لحظه‌ای وضعیت دکمه — بدون debounce */
+
+
+/**
+ * @brief
+ *      Read current physical button state.
+ *
+ * @param button
+ *      Logical button identifier.
+ *
+ * @return
+ *
+ *      true:
+ *          Button is currently pressed.
+ *
+ *      false:
+ *          Button is released.
+ *
+ *
+ * @note
+ *
+ *      This function does NOT apply debounce.
+ *
+ *      It should only be used for special cases,
+ *      not for normal menu navigation.
+ *
+ */
 bool Buttons_IsPressed(Button_Id_t button);
 
+
+
+#ifdef __cplusplus
+}
+#endif
+
+
 #endif /* BUTTONS_H */
+
+/******************************************************************************
+ *                              End Of File
+ ******************************************************************************/

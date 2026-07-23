@@ -451,20 +451,35 @@ void LCD_Display_RenderMenu(void)
         }
 
 
-
         /*
          * Draw cursor.
+         *
+         * Selected item:
+         *
+         *      > Item
+         *
+         * Non selected item:
+         *
+         *        Item
          */
         if(i == menu->cursor_position)
         {
             line[index++] =
                     LCD_MENU_CURSOR_CHAR;
+
+            line[index++] =
+                    ' ';
         }
         else
         {
             line[index++] =
                     ' ';
+
+            line[index++] =
+                    ' ';
         }
+
+
 
 
 
@@ -481,16 +496,22 @@ void LCD_Display_RenderMenu(void)
             if(item != 0)
             {
 
-                while((item[index-1U] != '\0') &&
-                      (index < LCD_DEFAULT_COLUMNS))
-                {
 
-                    line[index] =
-                            item[index-1U];
+            	uint8_t text_index = 0U;
 
-                    index++;
 
-                }
+            	while((item[text_index] != '\0') &&
+            	      (index < LCD_DEFAULT_COLUMNS))
+            	{
+
+            	    line[index] =
+            	            item[text_index];
+
+            	    index++;
+            	    text_index++;
+
+            	}
+
 
             }
 

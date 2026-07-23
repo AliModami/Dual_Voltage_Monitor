@@ -24,7 +24,6 @@
   * buttons.c
   *   |
   *   v
-  * button_app.c
   *   |
   *   v
   * main.c
@@ -45,12 +44,12 @@
 #include "lcd_display.h"
 #include "buzzer.h"
 #include "buttons.h"
-#include "button_app.h"
+
 
 #include "menu_items.h"
 #include "menu_controller.h"
 #include "menu_renderer.h"
-#include "button_handler.h"
+
 
 
 
@@ -164,9 +163,7 @@ int main(void)
 
   Buttons_Init();
 
-  ButtonApp_Init();
 
-  ButtonHandler_Init();
 
   MenuRenderer_Update();
 
@@ -205,63 +202,70 @@ int main(void)
         Buzzer_Task();
 
         Buttons_Task();
+        HAL_Delay(5);   //for test deboaunce ------------- bi asar bood hazf kon
 
-        ButtonApp_Task();
 
 
 
 //----------------------------------------- Button Test @ Line 4 -  Begin--------------------------------------
 
-        Button_AppCommand_t cmd;
+
+        Button_Event_t event;
 
 
-        if(ButtonApp_GetCommand(&cmd))
+        if(Buttons_GetEvent(&event))
         {
 
-            switch(cmd)
+            switch(event.button)
             {
 
-            case BUTTON_CMD_UP:
 
-                       ButtonHandler_Process(BUTTON_EVENT_UP);
+                case BUTTON_ID_UP:
 
-                       break;
+                    MenuController_MoveUp();
 
-
-                   case BUTTON_CMD_DOWN:
-
-                       ButtonHandler_Process(BUTTON_EVENT_DOWN);
-
-                       break;
+                    break;
 
 
-                   case BUTTON_CMD_ENTER:
 
-                       ButtonHandler_Process(BUTTON_EVENT_ENTER);
+                case BUTTON_ID_DOWN:
 
-                       break;
+                    MenuController_MoveDown();
 
-
-                   case BUTTON_CMD_BACK:
-
-                       ButtonHandler_Process(BUTTON_EVENT_BACK);
-
-                       break;
+                    break;
 
 
-                   default:
 
-                       break;
+                case BUTTON_ID_ENTER:
+
+                    MenuController_Enter();
+
+                    break;
+
+
+
+                case BUTTON_ID_BACK:
+
+                    MenuController_Back();
+
+                    break;
+
+
+
+                default:
+
+                    break;
+
             }
 
 
-
             MenuRenderer_Update();
+
             LCD_Display_RenderMenu();
 
-            HAL_Delay(300);
-
         }
+
+
 
 //-----------------------------------------Button Test @ Line 4 -  End------------------------------------
 

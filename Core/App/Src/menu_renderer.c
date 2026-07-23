@@ -504,11 +504,8 @@ const MenuRenderData_t *MenuRenderer_GetData(void)
  *
  *      Buttons_Task();
  *
- *      ButtonApp_Task();
  *
- *
- *      if(ButtonApp_GetCommand(&command))
- *      {
+
  *
  *          switch(command)
  *          {
