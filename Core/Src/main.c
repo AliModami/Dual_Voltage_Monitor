@@ -157,24 +157,22 @@ int main(void)
 
 
   MenuController_Init();
+
   MenuRenderer_Init();
+
+  Buzzer_Init();
+
+  Buttons_Init();
+
+  ButtonApp_Init();
+
   ButtonHandler_Init();
 
-  /*
-   * Initial menu rendering.
-   *
-   * Draw first page after initialization.
-   */
   MenuRenderer_Update();
 
-
-
-
-
-  MenuRenderer_Update();
   LCD_Display_RenderMenu();
 
-
+  //ADC_App_Init();
 
 
 
@@ -191,33 +189,6 @@ int main(void)
 //  LCD_Print("Line 4!");
 //------------ LCD Test Line END ----------------------------
 
-
-    /*
-     * Initialize buzzer module.
-     */
-    Buzzer_Init();
-
-
-
-    /*
-     * Initialize physical button driver.
-     *
-     * This layer only reads GPIO
-     * and generates button events.
-     */
-    Buttons_Init();
-
-
-
-    /*
-     * Initialize application button layer.
-     *
-     * This converts hardware events
-     * into application commands.
-     */
-    ButtonApp_Init();
-
-   //ADC_App_Init();
 
 
 
