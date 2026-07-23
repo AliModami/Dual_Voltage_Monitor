@@ -2,187 +2,135 @@
  *
  * @file    menu_items.h
  *
- * @brief   Menu Database Interface For Dual Voltage Monitor
+ * @brief   Page Based Menu Data Model
  *
  *------------------------------------------------------------------------------
  *
- * Project :
+ * Project:
  *
- *      Dual Voltage Monitor
- *
- *------------------------------------------------------------------------------
- *
- * MCU :
- *
- *      STM32F103C8T6
+ *      Dual Voltage Monitor - Page Based Menu Prototype
  *
  *------------------------------------------------------------------------------
  *
- * Framework :
+ * Description:
  *
- *      STM32 HAL
+ *      This file defines the menu data structures.
  *
- *------------------------------------------------------------------------------
+ *      Design rules:
  *
- * Description :
- *
- *      This file defines the public interface of the menu database layer.
- *
- *      The menu database is responsible for:
- *
- *          - Menu page identifiers
- *          - Menu item identifiers
- *          - Static menu object access
- *          - Menu initialization interface
- *
- *------------------------------------------------------------------------------
- *
- * Architecture :
- *
- *
- *                 +----------------+
- *                 | menu_items.c   |
- *                 | Menu Database  |
- *                 +-------+--------+
- *                         |
- *                         |
- *          +--------------+--------------+
- *          |                             |
- *          v                             v
- *
- *     menu_engine.c              menu_renderer.c
- *
- *
- *------------------------------------------------------------------------------
- *
- * Responsibilities :
- *
- *      This module is responsible for:
- *
- *          - Providing menu object identifiers.
- *          - Providing access functions.
- *          - Initializing menu database.
- *
- *
- *      This module is NOT responsible for:
- *
- *          - LCD control.
- *          - Button reading.
- *          - Navigation algorithm.
- *          - Application configuration storage.
- *
- *------------------------------------------------------------------------------
- *
- * Dependencies :
- *
- *      menu_types.h
- *
- *------------------------------------------------------------------------------
- *
- * Author :
- *
- *      Ali Modami
- *
- *------------------------------------------------------------------------------
- *
- * Version :
- *
- *      2.0.1
+ *      - Menu data is separated from menu control logic.
+ *      - No LCD dependency.
+ *      - No button dependency.
+ *      - No scrolling concept.
+ *      - Every menu page contains a maximum of three visible items.
  *
  ******************************************************************************/
-
 
 #ifndef MENU_ITEMS_H
 #define MENU_ITEMS_H
 
 
-
-/******************************************************************************
- * Includes
- ******************************************************************************/
-
-#include "menu_types.h"
-
-
-
-/******************************************************************************
- * C++ Compatibility
- ******************************************************************************/
-
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 
+#include <stdint.h>
 
-/******************************************************************************
- * Menu Page Identifiers
- ******************************************************************************/
 
-/**
- * @brief
- *      Unique identifiers for menu pages.
+
+/*
+ * Maximum number of items displayed on one LCD page.
  *
- * @details
- *      Each static MenuPage_t object created in
- *      menu_items.c owns one identifier.
+ * LCD 20x4:
+ *
+ * Line 0 : Page title
+ * Line 1-3 : Three menu items
  */
+#define MENU_PAGE_VISIBLE_ITEMS     3U
 
+
+
+/*
+ * Invalid page identifier.
+ *
+ * Used when an item has no child page.
+ */
+#define MENU_INVALID_PAGE           0xFFU
+
+
+
+/*
+ * Menu item type.
+ *
+ * Determines the behavior after ENTER.
+ */
+typedef enum
+{
+    /*
+     * Execute application callback.
+     */
+    MENU_ITEM_ACTION = 0,
+
+
+    /*
+     * Open child menu page.
+     */
+    MENU_ITEM_SUBMENU
+
+
+} MenuItemType_t;
+
+
+
+/*
+ * Menu page identifier.
+ *
+ * Each page represents one LCD display page.
+ */
 typedef enum
 {
 
     /*
-     * Root application menu.
+     * Main menu pages.
      */
-    MENU_PAGE_MAIN = 0U,
+    MENU_PAGE_MAIN_0 = 0,
+    MENU_PAGE_MAIN_1,
+    MENU_PAGE_MAIN_2,
 
 
     /*
-     * Live voltage monitoring page.
-     *
-     * Displays:
-     *
-     *      Vin
-     *      Vout
-     *      Status
-     */
-    MENU_PAGE_LIVE_MONITOR,
-
-
-    /*
-     * UART streaming configuration page.
+     * Stream settings.
      */
     MENU_PAGE_STREAM_SETTINGS,
 
 
     /*
-     * Alarm configuration page.
+     * Alarm settings.
      */
-    MENU_PAGE_ALARM_SETTINGS,
+    MENU_PAGE_ALARM_SETTINGS_0,
+    MENU_PAGE_ALARM_SETTINGS_1,
 
 
     /*
-     * ADC calibration page.
+     * Calibration.
      */
     MENU_PAGE_CALIBRATION,
 
 
     /*
-     * Service and diagnostic page.
+     * Service mode.
      */
-    MENU_PAGE_SERVICE_MODE,
+    MENU_PAGE_SERVICE_0,
+    MENU_PAGE_SERVICE_1,
 
 
     /*
-     * Firmware information page.
+     * System information.
      */
     MENU_PAGE_SYSTEM_INFO,
 
 
-    /*
-     * Number of available pages.
-     */
     MENU_PAGE_COUNT
 
 
@@ -190,456 +138,145 @@ typedef enum
 
 
 
-
-/******************************************************************************
- * Menu Item Identifiers
- ******************************************************************************/
-
-/**
- * @brief
- *      Unique identifiers for menu items.
+/*
+ * Menu action callback.
  *
- * @details
- *      Used by:
+ * Example:
  *
- *          - Menu Engine
- *          - Application callbacks
- *          - Configuration manager
+ * static void StartStream_Action(void)
+ * {
+ *      UART_Start();
+ * }
  */
+typedef void (*MenuAction_t)(void);
 
-typedef enum
+
+
+/*
+ * Menu item definition.
+ *
+ * Each item belongs to one Page.
+ *
+ * Example:
+ *
+ * Stream Settings
+ *
+ *      Baud Rate
+ *      Sample Rate
+ *
+ */
+typedef struct
 {
 
     /*
-     * Invalid item.
+     * Text displayed on LCD.
      */
-    MENU_ITEM_NONE = 0U,
-
-
-
-    /**************************************************************************
-     * Main Menu Items
-     **************************************************************************/
+    const char *text;
 
 
     /*
-     * Opens live monitoring page.
+     * Item behavior.
      */
-    MENU_ITEM_LIVE_MONITOR,
+    MenuItemType_t type;
 
 
     /*
-     * Starts UART data stream.
+     * Child page.
+     *
+     * Valid only when type is MENU_ITEM_SUBMENU.
      */
-    MENU_ITEM_START_STREAM,
+    MenuPageId_t child_page;
 
 
     /*
-     * Opens stream settings.
+     * Function executed for action items.
      */
-    MENU_ITEM_STREAM_SETTINGS,
+    MenuAction_t action;
 
 
-    /*
-     * Opens alarm settings.
-     */
-    MENU_ITEM_ALARM_SETTINGS,
+} MenuItem_t;
 
 
-    /*
-     * Opens calibration page.
-     */
-    MENU_ITEM_CALIBRATION,
-
-
-    /*
-     * Opens service mode.
-     */
-    MENU_ITEM_SERVICE_MODE,
-
-
-    /*
-     * Opens system information.
-     */
-    MENU_ITEM_SYSTEM_INFO,
-
-
-
-    /**************************************************************************
-     * Stream Settings Items
-     **************************************************************************/
-
-
-    /*
-     * UART baud rate selection.
-     */
-    MENU_ITEM_BAUD_RATE,
-
-
-    /*
-     * Stream sample interval.
-     */
-    MENU_ITEM_SAMPLE_RATE,
-
-
-
-    /**************************************************************************
-     * Alarm Settings Items
-     **************************************************************************/
-
-
-    /*
-     * Enable / disable alarm.
-     */
-    MENU_ITEM_ALARM_ENABLE,
-
-
-    /*
-     * Low voltage threshold.
-     */
-    MENU_ITEM_LOW_VOLTAGE_LIMIT,
-
-
-    /*
-     * High voltage threshold.
-     */
-    MENU_ITEM_HIGH_VOLTAGE_LIMIT,
-
-
-
-    /**************************************************************************
-     * Calibration Items
-     **************************************************************************/
-
-
-    /*
-     * Input voltage calibration.
-     */
-    MENU_ITEM_INPUT_CALIBRATION,
-
-
-    /*
-     * Output voltage calibration.
-     */
-    MENU_ITEM_OUTPUT_CALIBRATION,
-
-
-
-    /**************************************************************************
-     * Service Items
-     **************************************************************************/
-
-
-    /*
-     * Button diagnostic test.
-     */
-    MENU_ITEM_BUTTON_TEST,
-
-
-    /*
-     * Buzzer diagnostic test.
-     */
-    MENU_ITEM_BUZZER_TEST,
-
-
-    /*
-     * LCD diagnostic test.
-     */
-    MENU_ITEM_LCD_TEST,
-
-
-    /*
-     * Factory calibration.
-     */
-    MENU_ITEM_FACTORY_CALIBRATION,
-
-
-    /*
-     * Restore default configuration.
-     */
-    MENU_ITEM_RESTORE_DEFAULT,
-
-
-
-    /**************************************************************************
-     * System Information Items
-     **************************************************************************/
-
-
-    /*
-     * Firmware version display.
-     */
-    MENU_ITEM_FIRMWARE_VERSION,
-
-
-    /*
-     * Build information display.
-     */
-    MENU_ITEM_BUILD_INFORMATION,
-
-
-    /*
-     * Number of menu items.
-     */
-    MENU_ITEM_COUNT
-
-
-
-} MenuItemId_t;
-
-
-
-/******************************************************************************
- * Public Initialization Function
- ******************************************************************************/
-
-/**
- * @brief
- *      Initializes complete static menu database.
- *
- * @return
- *      MENU_RESULT_OK when initialization succeeds.
- */
-MenuResult_t MenuItems_Init(void);
-
-
-
-/******************************************************************************
- * Public Access Functions
- ******************************************************************************/
-
-/**
- * @brief
- *      Returns pointer to requested menu page.
- *
- * @param id
- *      Page identifier.
- *
- * @return
- *      Pointer to MenuPage_t object.
- */
-MenuPage_t *MenuItems_GetPage(MenuPageId_t id);
-
-
-
-/**
- * @brief
- *      Returns pointer to requested menu item.
- *
- * @param id
- *      Item identifier.
- *
- * @return
- *      Pointer to MenuItem_t object.
- */
-MenuItem_t *MenuItems_GetItem(MenuItemId_t id);
-
-
-/******************************************************************************
- * Public Menu Root Access
- ******************************************************************************/
-
-/**
- * @brief
- *      Returns the root menu page.
- *
- * @details
- *      The root page is the first page displayed
- *      after system startup.
- *
- * @return
- *      Pointer to Main Menu page.
- */
-MenuPage_t *MenuItems_GetRootPage(void);
-
-
-
-
-/******************************************************************************
- * Menu Database Information
- ******************************************************************************/
-
-/**
- * @brief
- *      Returns menu database version string.
- *
- * @return
- *      Constant version text.
- */
-const char *MenuItems_GetVersion(void);
-
-
-
-
-/******************************************************************************
- * Menu Database Design Notes
- ******************************************************************************/
 
 /*
+ * Menu page definition.
+ *
+ * A page contains maximum three visible items.
+ *
+ * Example:
+ *
+ * MAIN MENU PAGE 0
+ *
+ * > Live Monitor
+ *   Start Stream
+ *   Stream Settings
+ *
+ */
+typedef struct
+{
 
-The menu database layer stores only static information.
-
-Ownership model:
-
-
-        +--------------------------------+
-        |        Application Data        |
-        |                                |
-        | ADC / UART / Settings          |
-        +----------------+---------------+
-                         |
-                         |
-                         v
-
-
-        +--------------------------------+
-        |        Menu Database           |
-        |                                |
-        | MenuItem_t                      |
-        | MenuPage_t                      |
-        +----------------+---------------+
-                         |
-                         |
-                         v
+    /*
+     * Page title.
+     */
+    const char *title;
 
 
-        +--------------------------------+
-        |         Menu Engine            |
-        |                                |
-        | Runtime navigation state       |
-        +--------------------------------+
+    /*
+     * Parent page.
+     *
+     * Used by BACK operation.
+     */
+    MenuPageId_t parent_page;
 
 
-
-Important rules:
-
-
-1.
-Menu database does not allocate memory dynamically.
+    /*
+     * Menu items displayed on this page.
+     */
+    const MenuItem_t *items;
 
 
-2.
-Menu database does not communicate with hardware.
+    /*
+     * Number of items in this page.
+     */
+    uint8_t item_count;
 
 
-3.
-Menu items contain references to application data only.
+    /*
+     * Next page.
+     *
+     * Used when one logical menu contains
+     * more than three items.
+     *
+     * Example:
+     *
+     * MAIN MENU PAGE 0
+     * MAIN MENU PAGE 1
+     */
+    MenuPageId_t next_page;
 
 
-4.
-Menu engine controls runtime state.
+    /*
+     * Previous page.
+     */
+    MenuPageId_t previous_page;
 
 
-5.
-Renderer controls display output.
+} MenuPage_t;
 
 
-6.
-Application modules are connected through callbacks.
-
-
-
-*/
-
-
-/******************************************************************************
- * Menu Database Usage Example
- ******************************************************************************/
 
 /*
-
-Example:
-
-
-    MenuPage_t *page;
-
-
-    page = MenuItems_GetRootPage();
+ * Get page information.
+ *
+ * Used by menu_controller.
+ */
+const MenuPage_t *MenuItems_GetPage(MenuPageId_t page_id);
 
 
-    if(page != NULL)
-    {
-        MenuEngine_SetPage(page);
-    }
-
-
-
-*/
-
-
-/******************************************************************************
- * C Compatibility Closing
- ******************************************************************************/
 
 #ifdef __cplusplus
 }
 #endif
 
 
-
 #endif /* MENU_ITEMS_H */
-
-
-
-
-/******************************************************************************
- *
- * Revision History
- *
- ******************************************************************************
-
-Version 2.0.1
-Date: 2026-07-15
-
-
-Changes:
-
-
-    - Removed duplicated menu type definitions.
-
-
-    - MenuVisibility_t is now provided only by:
-
-          menu_types.h
-
-
-
-    - MenuEditType_t is now provided only by:
-
-          menu_types.h
-
-
-
-    - Callback typedef ownership moved completely
-      to menu_types.h.
-
-
-
-    - Reduced dependency duplication.
-
-
-    - Added root page accessor.
-
-
-    - Added version accessor.
-
-
-    - Prepared interface for:
-
-          Menu Engine
-
-          Menu Renderer
-
-          Settings Manager
-
-
-
- ******************************************************************************/
-
-
-
-/******************************************************************************
- *
- * End Of File
- *
- ******************************************************************************/

@@ -33,6 +33,8 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
+//#include <menu_renderer_old.h>
+//#include <lcd_display_old.h>
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -41,13 +43,14 @@
 #include <stdio.h>
 #include "lcd_i2c.h"
 #include "lcd_display.h"
-#include <menu_types.h>
 #include "buzzer.h"
 #include "buttons.h"
 #include "button_app.h"
 
-#include "menu_engine.h"
-
+#include "menu_items.h"
+#include "menu_controller.h"
+#include "menu_renderer.h"
+#include "button_handler.h"
 
 
 
@@ -127,9 +130,11 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
+
   /* USER CODE BEGIN 2 */
 
 
@@ -147,50 +152,35 @@ int main(void)
   // ( Handler I2C1، Address, Columns، Rows )َ
   //LCD_Init(&hi2c1, 0x27, 20, 4);
 
-
-
-
-
-  //---------------------------------------------
-
   LCD_Display_Init(&hi2c1);
 
 
 
-  LCD_Display_ShowTitle(
-          "Main Menu");
+  MenuController_Init();
+  MenuRenderer_Init();
+  ButtonHandler_Init();
 
-
-
-  LCD_Display_PrintLine(
-          1,
-          "Hello STM32!");
-
-
-
-  LCD_Display_PrintLine(
-          2,
-          "Line 3 Test");
-
-
-
-  LCD_Display_PrintLine(
-          3,
-          "Display Layer OK");
-
-
-  //----------------------------------------------
+  /*
+   * Initial menu rendering.
+   *
+   * Draw first page after initialization.
+   */
+  MenuRenderer_Update();
 
 
 
 
 
+  MenuRenderer_Update();
+  LCD_Display_RenderMenu();
 
-  //LCD_Clear();
-  //HAL_Delay(5);
+
+
 
 
 //------------ LCD Test Line Begin --------------------------
+//  LCD_Clear();
+//  HAL_Delay(5);
 //  LCD_SetCursor(0, 0);
 //  LCD_Print("Hello STM32!");
 //  LCD_SetCursor(0, 1);       // Line2
@@ -227,11 +217,7 @@ int main(void)
      */
     ButtonApp_Init();
 
-
-    //ADC_App_Init();
-
-   // MenuItems_Init();
-
+   //ADC_App_Init();
 
 
 
@@ -243,9 +229,6 @@ int main(void)
 
     while (1)
     {
-
-
-
 
 
         Buzzer_Task();
@@ -260,37 +243,53 @@ int main(void)
 
         Button_AppCommand_t cmd;
 
-        if (ButtonApp_GetCommand(&cmd))
+
+        if(ButtonApp_GetCommand(&cmd))
         {
+
             switch(cmd)
             {
-                case BUTTON_CMD_UP:
 
-                    LCD_SetCursor(0,3);
-                    LCD_Print("UP                ");
-                    break;
+            case BUTTON_CMD_UP:
 
-                case BUTTON_CMD_DOWN:
+                       ButtonHandler_Process(BUTTON_EVENT_UP);
 
-                    LCD_SetCursor(0,3);
-                    LCD_Print("DOWN              ");
-                    break;
+                       break;
 
-                case BUTTON_CMD_ENTER:
 
-                    LCD_SetCursor(0,3);
-                    LCD_Print("ENTER             ");
-                    break;
+                   case BUTTON_CMD_DOWN:
 
-                case BUTTON_CMD_BACK:
+                       ButtonHandler_Process(BUTTON_EVENT_DOWN);
 
-                    LCD_SetCursor(0,3);
-                    LCD_Print("BACK              ");
-                    break;
+                       break;
 
-                default:
-                    break;
+
+                   case BUTTON_CMD_ENTER:
+
+                       ButtonHandler_Process(BUTTON_EVENT_ENTER);
+
+                       break;
+
+
+                   case BUTTON_CMD_BACK:
+
+                       ButtonHandler_Process(BUTTON_EVENT_BACK);
+
+                       break;
+
+
+                   default:
+
+                       break;
             }
+
+
+
+            MenuRenderer_Update();
+            LCD_Display_RenderMenu();
+
+            HAL_Delay(300);
+
         }
 
 //-----------------------------------------Button Test @ Line 4 -  End------------------------------------
