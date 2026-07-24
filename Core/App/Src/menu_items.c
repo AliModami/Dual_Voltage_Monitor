@@ -28,7 +28,7 @@
  ******************************************************************************/
 
 #include "menu_items.h"
-
+#include "menu_edit.h"
 
 
 /*
@@ -808,13 +808,10 @@ static void Action_StartStream(void)
 
 static void Action_BaudRate(void)
 {
-
     /*
-     * TODO:
-     *
-     * Open baud rate configuration.
+     * Enter Edit Mode.
      */
-
+    MenuEdit_Enter();
 }
 
 

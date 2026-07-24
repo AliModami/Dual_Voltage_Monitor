@@ -33,7 +33,7 @@
  ******************************************************************************/
 
 #include "menu_controller.h"
-
+#include "menu_edit.h"
 
 
 /*
@@ -48,7 +48,11 @@
  */
 static MenuControllerState_t menu_state;
 
-
+/*
+ * Remember last selected item
+ * for every menu page.
+ */
+static uint8_t page_cursor[MENU_PAGE_COUNT];
 
 
 /*
@@ -149,6 +153,10 @@ void MenuController_Init(void)
 
 
     menu_state.selected_item = 0U;
+    for (uint8_t i = 0; i < MENU_PAGE_COUNT; i++)
+    {
+        page_cursor[i] = 0U;
+    }
 
 }
 
@@ -206,6 +214,8 @@ void MenuController_MoveUp(void)
     if (menu_state.selected_item > 0U)
     {
         menu_state.selected_item--;
+        page_cursor[menu_state.current_page] =
+                menu_state.selected_item;
 
         return;
     }
@@ -306,7 +316,8 @@ void MenuController_MoveDown(void)
     {
 
         menu_state.selected_item++;
-
+        page_cursor[menu_state.current_page] =
+                menu_state.selected_item;
         return;
 
     }
@@ -468,10 +479,14 @@ void MenuController_Enter(void)
         if (item->child_page != MENU_INVALID_PAGE)
         {
 
-            menu_state.current_page = item->child_page;
+        	page_cursor[menu_state.current_page] =
+        	        menu_state.selected_item;
 
+        	menu_state.current_page =
+        	        item->child_page;
 
-            MenuController_ResetCursor();
+        	menu_state.selected_item =
+        	        page_cursor[menu_state.current_page];
 
         }
 
@@ -547,10 +562,11 @@ void MenuController_Back(void)
 
 
 
-    menu_state.current_page = page->parent_page;
+    menu_state.current_page =
+            page->parent_page;
 
-
-    MenuController_ResetCursor();
+    menu_state.selected_item =
+            page_cursor[menu_state.current_page];
 
 }
 
