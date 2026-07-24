@@ -8,33 +8,34 @@
  *
  * Project:
  *
- *      Dual Voltage Monitor - Page Based Menu Prototype
+ *      Dual Voltage Monitor
  *
  *------------------------------------------------------------------------------
  *
  * Description:
  *
- *      Runtime controller for page based menu system.
+ *      This module implements the runtime controller of the
+ *      page based menu system.
  *
  *      Responsibilities:
  *
- *      - Manage current page.
+ *      - Manage active menu page.
  *      - Manage cursor position.
  *      - Handle UP / DOWN navigation.
  *      - Handle ENTER operation.
  *      - Handle BACK operation.
  *
- *      Design rules:
  *
- *      - No LCD dependency.
- *      - No button dependency.
- *      - No hardware dependency.
+ *      This module does NOT handle:
+ *
+ *      - LCD rendering.
+ *      - Button hardware.
+ *      - Application hardware.
  *
  ******************************************************************************/
 
 #include "menu_controller.h"
 #include "menu_edit.h"
-
 
 
 /*
@@ -45,43 +46,55 @@
 
 
 /*
- * Runtime menu state.
+ * Current menu runtime state.
  */
 static MenuControllerState_t menu_state;
 
 
 /*
  * Cursor memory for each page.
+ *
+ * This allows returning to a page
+ * with the previous selected item.
  */
 static uint8_t page_cursor[MENU_PAGE_COUNT];
 
 
 
+
+
 /*
  * ============================================================================
- * Private Helper Functions
+ * Private Functions
  * ============================================================================
  */
 
 
 /*
- * Return current page pointer.
+ * Get current page object.
  */
 static const MenuPage_t *MenuController_GetPage(void)
 {
-    return MenuItems_GetPage(menu_state.current_page);
+
+    return MenuItems_GetPage(
+            menu_state.current_page);
+
 }
 
 
 
 
-/*
- * Reset cursor position.
- */
-static void MenuController_ResetCursor(void)
-{
-    menu_state.selected_item = 0U;
-}
+
+///*
+// * Reset current cursor.
+// */
+//static void MenuController_ResetCursor(void)
+//{
+//
+//    menu_state.selected_item = 0U;
+//
+//}
+
 
 
 
@@ -91,22 +104,31 @@ static void MenuController_ResetCursor(void)
  */
 static void MenuController_ValidateCursor(void)
 {
+
     const MenuPage_t *page;
 
 
     page = MenuController_GetPage();
 
 
+
     if(page == 0)
     {
+
         menu_state.selected_item = 0U;
+
         return;
+
     }
 
 
-    if(menu_state.selected_item >= page->item_count)
+
+    if(menu_state.selected_item >=
+       page->item_count)
     {
+
         menu_state.selected_item = 0U;
+
     }
 
 }
@@ -114,35 +136,46 @@ static void MenuController_ValidateCursor(void)
 
 
 
+
 /*
- * Save cursor of current page.
+ * Save current page cursor.
  */
 static void MenuController_SaveCursor(void)
 {
+
     if(menu_state.current_page < MENU_PAGE_COUNT)
     {
+
         page_cursor[menu_state.current_page] =
                 menu_state.selected_item;
+
     }
+
 }
 
 
 
 
+
 /*
- * Restore cursor of current page.
+ * Restore current page cursor.
  */
 static void MenuController_RestoreCursor(void)
 {
+
     if(menu_state.current_page < MENU_PAGE_COUNT)
     {
+
         menu_state.selected_item =
                 page_cursor[menu_state.current_page];
+
     }
 
 
     MenuController_ValidateCursor();
+
 }
+
 
 
 
@@ -155,10 +188,13 @@ static void MenuController_RestoreCursor(void)
 
 
 /*
- * Initialize controller.
+ * Initialize menu controller.
  */
 void MenuController_Init(void)
 {
+
+    uint8_t i;
+
 
     menu_state.current_page =
             MENU_PAGE_MAIN_0;
@@ -167,14 +203,20 @@ void MenuController_Init(void)
     menu_state.selected_item = 0U;
 
 
-    for(uint8_t i = 0U;
+
+    for(i = 0U;
         i < MENU_PAGE_COUNT;
         i++)
     {
+
         page_cursor[i] = 0U;
+
     }
 
 }
+
+
+
 
 
 
@@ -190,6 +232,7 @@ void MenuController_Init(void)
  */
 void MenuController_MoveUp(void)
 {
+
     const MenuPage_t *page;
 
 
@@ -200,6 +243,64 @@ void MenuController_MoveUp(void)
     {
         return;
     }
+
+
+    MenuController_ValidateCursor();
+
+
+
+    /*
+     * Move cursor inside current page.
+     */
+    if(menu_state.selected_item > 0U)
+    {
+
+        menu_state.selected_item--;
+
+        MenuController_SaveCursor();
+
+    }
+    else
+    {
+
+        /*
+         * First item reached.
+         *
+         * Move to previous page if available.
+         */
+        if(page->previous_page != MENU_INVALID_PAGE)
+        {
+
+            MenuController_PreviousPage();
+
+        }
+
+    }
+
+}
+
+
+
+
+
+/*
+ * Move cursor down.
+ */
+void MenuController_MoveDown(void)
+{
+
+    const MenuPage_t *page;
+
+
+    page = MenuController_GetPage();
+
+
+
+    if(page == 0)
+    {
+        return;
+    }
+
 
 
     MenuController_ValidateCursor();
@@ -209,82 +310,6 @@ void MenuController_MoveUp(void)
     /*
      * Move inside current page.
      */
-    if(menu_state.selected_item > 0U)
-    {
-        menu_state.selected_item--;
-
-        MenuController_SaveCursor();
-
-        return;
-    }
-
-
-
-    /*
-     * Page transition is allowed only
-     * when previous page exists.
-     */
-    if(page->previous_page != MENU_INVALID_PAGE)
-    {
-
-        MenuController_SaveCursor();
-
-
-        menu_state.current_page =
-                page->previous_page;
-
-
-        page = MenuController_GetPage();
-
-
-        if(page != 0)
-        {
-            menu_state.selected_item =
-                    page->item_count - 1U;
-
-            MenuController_SaveCursor();
-        }
-
-    }
-
-}
-
-/*
- * ============================================================================
- * Move cursor down.
- * ============================================================================
- *
- * Behavior:
- *
- * - Move inside current page.
- * - If current page has next logical page:
- *      move to next page only when
- *      cursor is already on last item.
- *
- * ============================================================================
- */
-
-void MenuController_MoveDown(void)
-{
-    const MenuPage_t *page;
-
-
-    page = MenuController_GetPage();
-
-
-    if(page == 0)
-    {
-        return;
-    }
-
-
-    MenuController_ValidateCursor();
-
-
-
-    /*
-     * Normal movement inside current page.
-     */
     if(menu_state.selected_item <
        (page->item_count - 1U))
     {
@@ -293,42 +318,41 @@ void MenuController_MoveDown(void)
 
         MenuController_SaveCursor();
 
-        return;
-
     }
-
-
 
 
     /*
-     * Cursor is already on last item.
+     * Current page last item reached.
      *
-     * Move to next page only if
-     * current page belongs to a page chain.
-     *
+     * Move to next page if available.
      */
-    if(page->next_page != MENU_INVALID_PAGE)
+//    else if(page->next_page != MENU_INVALID_PAGE)
+//    {
+//
+//        MenuController_NextPage();
+//
+//    }
+
+   //------------------------------------------------------------
+    else
     {
+        if(page->next_page != MENU_INVALID_PAGE)
+        {
+            MenuController_NextPage();
 
-        MenuController_SaveCursor();
+            menu_state.selected_item = 0U;
 
-
-
-        menu_state.current_page =
-                page->next_page;
-
-
-
-        MenuController_ResetCursor();
-
-
-
-        MenuController_SaveCursor();
-
+            MenuController_SaveCursor();
+        }
     }
 
-}
 
+    //------------------------------------------------------------
+
+
+
+
+}
 
 
 /*
@@ -339,12 +363,14 @@ void MenuController_MoveDown(void)
 
 
 /*
- * Move to next page manually.
+ * Move to next logical page.
  *
- * Used for logical page chains.
+ * Used for pages containing
+ * more than three items.
  */
 void MenuController_NextPage(void)
 {
+
     const MenuPage_t *page;
 
 
@@ -371,11 +397,15 @@ void MenuController_NextPage(void)
 
 
 
-        MenuController_ResetCursor();
+//        MenuController_RestoreCursor();
 
-
+ //--------------------------------------------------------
+        menu_state.selected_item = 0U;
 
         MenuController_SaveCursor();
+ //---------------------------------------------------
+
+
 
     }
 
@@ -384,11 +414,13 @@ void MenuController_NextPage(void)
 
 
 
+
 /*
- * Move to previous page manually.
+ * Move to previous logical page.
  */
 void MenuController_PreviousPage(void)
 {
+
     const MenuPage_t *page;
 
 
@@ -424,6 +456,7 @@ void MenuController_PreviousPage(void)
 
 
 
+
 /*
  * ============================================================================
  * ENTER Operation
@@ -431,16 +464,13 @@ void MenuController_PreviousPage(void)
  *
  * Priority:
  *
- * 1- Edit mode confirmation.
+ * 1- Confirm active edit operation.
  *
- * 2- Open submenu.
+ * 2- Open child menu page.
  *
  * 3- Execute action callback.
  *
- * ============================================================================
  */
-
-
 void MenuController_Enter(void)
 {
 
@@ -449,7 +479,7 @@ void MenuController_Enter(void)
 
 
     /*
-     * Editing has priority.
+     * Editing mode has priority.
      */
     if(MenuEdit_IsActive())
     {
@@ -459,7 +489,6 @@ void MenuController_Enter(void)
         return;
 
     }
-
 
 
 
@@ -474,9 +503,8 @@ void MenuController_Enter(void)
 
 
 
-
     /*
-     * Open child page.
+     * Open submenu.
      */
     if(item->type == MENU_ITEM_SUBMENU)
     {
@@ -484,24 +512,15 @@ void MenuController_Enter(void)
         if(item->child_page != MENU_INVALID_PAGE)
         {
 
-            /*
-             * Store parent cursor.
-             */
             MenuController_SaveCursor();
 
 
 
-            /*
-             * Enter child page.
-             */
             menu_state.current_page =
                     item->child_page;
 
 
 
-            /*
-             * Restore child cursor.
-             */
             MenuController_RestoreCursor();
 
         }
@@ -513,9 +532,8 @@ void MenuController_Enter(void)
 
 
 
-
     /*
-     * Execute action.
+     * Execute menu action.
      */
     if(item->action != 0)
     {
@@ -526,28 +544,25 @@ void MenuController_Enter(void)
 
 }
 
+
+
+
+
 /*
  * ============================================================================
  * BACK Operation
  * ============================================================================
  *
- * Behavior:
- *
  * Edit Mode:
  *
- *      Cancel current editing.
+ *      Cancel current value change.
  *
  *
  * Normal Mode:
  *
  *      Return to parent page.
  *
- *      Restore previous cursor position.
- *
- * ============================================================================
  */
-
-
 void MenuController_Back(void)
 {
 
@@ -556,8 +571,7 @@ void MenuController_Back(void)
 
 
     /*
-     * If value editing is active,
-     * BACK cancels editing only.
+     * Cancel active edit.
      */
     if(MenuEdit_IsActive())
     {
@@ -581,9 +595,8 @@ void MenuController_Back(void)
 
 
 
-
     /*
-     * Root page has no parent.
+     * Root page.
      */
     if(page->parent_page == MENU_INVALID_PAGE)
     {
@@ -592,27 +605,15 @@ void MenuController_Back(void)
 
 
 
-
-    /*
-     * Save current page cursor.
-     */
     MenuController_SaveCursor();
 
 
 
-
-    /*
-     * Move to parent page.
-     */
     menu_state.current_page =
             page->parent_page;
 
 
 
-
-    /*
-     * Restore parent cursor.
-     */
     MenuController_RestoreCursor();
 
 }
@@ -625,19 +626,18 @@ void MenuController_Back(void)
  * ============================================================================
  *
  * These functions provide read-only access
- * to controller state.
+ * to the current menu state.
  *
  * Used by:
  *
- *      menu_renderer.c
+ *      - menu_renderer.c
  *
  * ============================================================================
  */
 
 
-
 /*
- * Return current page information.
+ * Get current page information.
  */
 const MenuPage_t *MenuController_GetCurrentPage(void)
 {
@@ -649,8 +649,9 @@ const MenuPage_t *MenuController_GetCurrentPage(void)
 
 
 
+
 /*
- * Return selected item index.
+ * Get selected item index.
  */
 uint8_t MenuController_GetSelectedIndex(void)
 {
@@ -662,8 +663,9 @@ uint8_t MenuController_GetSelectedIndex(void)
 
 
 
+
 /*
- * Return selected item information.
+ * Get selected item information.
  */
 const MenuItem_t *MenuController_GetSelectedItem(void)
 {
@@ -683,7 +685,6 @@ const MenuItem_t *MenuController_GetSelectedItem(void)
 
 
 
-
     if(menu_state.selected_item >=
        page->item_count)
     {
@@ -692,16 +693,17 @@ const MenuItem_t *MenuController_GetSelectedItem(void)
 
 
 
-
-    return &page->items[menu_state.selected_item];
+    return &page->items[
+            menu_state.selected_item];
 
 }
 
 
 
 
+
 /*
- * Return current page identifier.
+ * Get current page identifier.
  */
 MenuPageId_t MenuController_GetCurrentPageId(void)
 {
@@ -711,98 +713,127 @@ MenuPageId_t MenuController_GetCurrentPageId(void)
 }
 
 
-/*
- * ============================================================================
- * End Of File Notes
- * ============================================================================
- *
- * This version implements:
- *
- * - Page based navigation.
- * - Cursor memory for every page.
- * - Three visible items per page support.
- * - ENTER submenu handling.
- * - BACK parent navigation.
- * - Edit mode priority.
- * - No LCD dependency.
- * - No button dependency.
- *
- *
- * Navigation Example:
- *
- *
- * MAIN MENU PAGE 0
- *
- *   Live Monitor
- *   Start Stream
- *   Stream Settings
- *
- *
- *              DOWN
- *
- *
- * MAIN MENU PAGE 1
- *
- *   Alarm Settings
- *   Calibration
- *   Service Mode
- *
- *
- *
- * BACK Example:
- *
- *
- * Stream Settings
- *
- *        BACK
- *
- *          |
- *          v
- *
- * Main Menu Page 0
- *
- *
- *
- * Edit Example:
- *
- *
- * Baud Rate
- *
- *        ENTER
- *
- *          |
- *          v
- *
- * Edit Mode Active
- *
- *
- *        BACK
- *
- *          |
- *          v
- *
- * Cancel Edit
- *
- *
- *        ENTER
- *
- *          |
- *          v
- *
- * Confirm Value
- *
- *
- * ============================================================================
- */
 
-
-/*
- * No additional code required.
- */
 
 
 /*
  * ============================================================================
  * End Of File
+ * ============================================================================
+ *
+ * Version:
+ *
+ *      menu_controller.c
+ *      Clean Final v1.1.1
+ *
+ *
+ * Verified:
+ *
+ *      - No duplicated static functions.
+ *      - Compatible with menu_controller.h.
+ *      - Compatible with menu_items.h.
+ *      - Compatible with menu_edit.h.
+ *      - No LCD dependency.
+ *      - No button dependency.
+ *
+ * ============================================================================
+ */
+
+
+/*
+ * ============================================================================
+ * End Of File Notes
+ * ============================================================================
+ *
+ * Implemented Features:
+ *
+ *      - Page based menu navigation.
+ *      - Three visible item architecture support.
+ *      - Cursor position management.
+ *      - Cursor memory per page.
+ *      - ENTER submenu handling.
+ *      - ENTER action callback execution.
+ *      - BACK parent page navigation.
+ *      - Edit mode confirmation priority.
+ *      - Edit mode cancel priority.
+ *      - Renderer independent design.
+ *
+ *
+ * Navigation Rules:
+ *
+ *      UP:
+ *
+ *          Move cursor upward.
+ *          Stop at first item.
+ *
+ *
+ *      DOWN:
+ *
+    Move cursor downward.
+
+    If the last item is reached:
+        Move to next page if available.
+
+    No wrap around.
+ *
+ *
+ *      ENTER:
+ *
+ *          If editing:
+ *              Confirm value.
+ *
+ *          Else if submenu:
+ *              Open child page.
+ *
+ *          Else:
+ *              Execute action.
+ *
+ *
+ *      BACK:
+ *
+ *          If editing:
+ *              Cancel edit.
+ *
+ *          Else:
+ *              Return to parent page.
+ *
+ *
+ * Dependencies:
+ *
+ *      menu_controller.h
+ *              |
+ *              |
+ *              +---- menu_items.h
+ *
+ *
+ *      menu_controller.c
+ *              |
+ *              |
+ *              +---- menu_edit.h
+ *
+ *
+ * No dependency:
+ *
+ *      - lcd_display
+ *      - lcd_i2c
+ *      - button driver
+ *      - HAL
+ *
+ *
+ * Build Compatibility:
+ *
+ *      STM32F103C8T6
+ *
+ *      STM32 HAL
+ *
+ *      GCC ARM Embedded
+ *
+ *
+ * Version:
+ *
+ *      menu_controller.c
+ *
+ *      Clean Final v1.1.1
+ *
  * ============================================================================
  */

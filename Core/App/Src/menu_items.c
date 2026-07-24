@@ -325,7 +325,7 @@ static const MenuItem_t calibration_items[] =
 {
 
     {
-        .text       = "Input Voltage Offset",
+        .text       = "Vinput Offset",
         .type       = MENU_ITEM_ACTION,
         .child_page = MENU_INVALID_PAGE,
         .action     = Action_InputVoltageOffset
@@ -333,7 +333,7 @@ static const MenuItem_t calibration_items[] =
 
 
     {
-        .text       = "Output Voltage Offset",
+        .text       = "Voutput Offset",
         .type       = MENU_ITEM_ACTION,
         .child_page = MENU_INVALID_PAGE,
         .action     = Action_OutputVoltageOffset
@@ -475,7 +475,7 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 [MENU_PAGE_MAIN_0] =
 {
-    .title         = "Main Menu",
+    .title         = "Main Menu -- Page1/3",
 
     .parent_page   = MENU_INVALID_PAGE,
 
@@ -500,7 +500,7 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 [MENU_PAGE_MAIN_1] =
 {
-    .title         = "Main Menu",
+    .title         = "Main Menu -- Page2/3",
 
     .parent_page   = MENU_INVALID_PAGE,
 
@@ -525,7 +525,7 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 [MENU_PAGE_MAIN_2] =
 {
-    .title         = "Main Menu",
+    .title         = "Main Menu -- Page3/3",
 
     .parent_page   = MENU_INVALID_PAGE,
 
@@ -813,13 +813,7 @@ static void Action_SampleRate(void)
 
 static void Action_AlarmEnable(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Toggle alarm enable state.
-     */
-
+    MenuAction_AlarmEnable();
 }
 
 
@@ -827,13 +821,7 @@ static void Action_AlarmEnable(void)
 
 static void Action_LowVoltageLimit(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Configure low voltage threshold.
-     */
-
+    MenuAction_LowVoltageLimit();
 }
 
 
@@ -841,13 +829,7 @@ static void Action_LowVoltageLimit(void)
 
 static void Action_HighVoltageLimit(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Configure high voltage threshold.
-     */
-
+    MenuAction_HighVoltageLimit();
 }
 
 
@@ -855,13 +837,7 @@ static void Action_HighVoltageLimit(void)
 
 static void Action_AlarmMode(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Select alarm operation mode.
-     */
-
+    MenuAction_AlarmMode();
 }
 
 
@@ -870,11 +846,7 @@ static void Action_AlarmMode(void)
 static void Action_InputVoltageOffset(void)
 {
 
-    /*
-     * TODO:
-     *
-     * Adjust input voltage calibration offset.
-     */
+    MenuAction_InputVoltageOffset();
 
 }
 
@@ -884,11 +856,7 @@ static void Action_InputVoltageOffset(void)
 static void Action_OutputVoltageOffset(void)
 {
 
-    /*
-     * TODO:
-     *
-     * Adjust output voltage calibration offset.
-     */
+    MenuAction_OutputVoltageOffset();
 
 }
 

@@ -169,7 +169,7 @@ void MenuController_Enter(void);
  * Behavior:
  *
  * - Return to parent page.
- * - Reset cursor position.
+ * - Restore previous cursor position of parent page
  *
  */
 void MenuController_Back(void);

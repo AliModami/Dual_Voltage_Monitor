@@ -75,29 +75,34 @@ void ScreenManager_Render(void)
         /*
          * Check parameter edit mode.
          */
-        if(MenuEdit_IsActive())
-        {
+//        if(MenuEdit_IsActive())
+//        {
+//
+//            /*
+//             * Edit rendering will be added
+//             * in lcd_display.c next step.
+//             */
+//            MenuRenderer_Update();
+//
+//            LCD_Display_RenderMenu();
+//
+//        }
+//        else
+//        {
+//
+//            /*
+//             * Normal menu rendering.
+//             */
+//            MenuRenderer_Update();
+//
+//            LCD_Display_RenderMenu();
+//
+//        }
 
-            /*
-             * Edit rendering will be added
-             * in lcd_display.c next step.
-             */
-            MenuRenderer_Update();
 
-            LCD_Display_RenderMenu();
+    	MenuRenderer_Update();
 
-        }
-        else
-        {
-
-            /*
-             * Normal menu rendering.
-             */
-            MenuRenderer_Update();
-
-            LCD_Display_RenderMenu();
-
-        }
+    	LCD_Display_RenderMenu();
 
 
         break;

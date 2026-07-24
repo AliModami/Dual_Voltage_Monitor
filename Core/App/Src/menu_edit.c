@@ -14,32 +14,44 @@
  *
  * Description:
  *
- *      This module manages editing of runtime configuration
- *      parameters from the menu system.
+ *      This module manages editing of runtime configuration parameters
+ *      through the menu system.
  *
- *      Supported parameters:
+ *      Responsibilities:
  *
- *      - Baud Rate
- *      - Sample Rate
- *      - Alarm Enable
- *      - Low Voltage Limit
- *      - High Voltage Limit
- *      - Alarm Mode
+ *      - Start editing selected configuration item.
+ *      - Store temporary edit value.
+ *      - Apply or cancel changes.
+ *      - Validate editable values.
  *
  *
  *      This module does NOT handle:
  *
- *      - LCD rendering
- *      - Button reading
- *      - Hardware access
+ *      - LCD rendering.
+ *      - Button hardware.
+ *      - Configuration storage.
  *
  ******************************************************************************/
 
 #include "menu_edit.h"
 #include "config.h"
+#include <stdio.h>
 
 
+/*
+ * ============================================================================
+ * Private Constants
+ * ============================================================================
+ */
 
+
+/*
+ * Baud rate adjustment step.
+ */
+#define MENU_EDIT_BAUD_STEP        9600U
+
+
+#define MENU_EDIT_OFFSET_STEP      1
 
 
 /*
@@ -50,7 +62,7 @@
 
 
 /*
- * Current edit state.
+ * Edit mode status.
  */
 static bool g_edit_mode = false;
 
@@ -64,7 +76,7 @@ static MenuEditTarget_t g_edit_target = EDIT_NONE;
 
 
 /*
- * Current temporary edited value.
+ * Temporary edited value.
  */
 static int32_t g_edit_value = 0;
 
@@ -72,12 +84,8 @@ static int32_t g_edit_value = 0;
 
 /*
  * Previous confirmed value.
- *
- * Used for cancel operation.
  */
 static int32_t g_edit_old_value = 0;
-
-
 
 
 
@@ -96,16 +104,20 @@ static int32_t g_edit_old_value = 0;
 static int32_t MenuEdit_ClampVoltage(int32_t value)
 {
 
-    if(value < VOLTAGE_LIMIT_MIN)
+    if(value < (int32_t)CONFIG_VOLTAGE_LIMIT_MIN)
     {
-        value = VOLTAGE_LIMIT_MIN;
+
+        value = CONFIG_VOLTAGE_LIMIT_MIN;
+
     }
 
 
 
-    if(value > VOLTAGE_LIMIT_MAX)
+    if(value > (int32_t)CONFIG_VOLTAGE_LIMIT_MAX)
     {
-        value = VOLTAGE_LIMIT_MAX;
+
+        value = CONFIG_VOLTAGE_LIMIT_MAX;
+
     }
 
 
@@ -124,16 +136,20 @@ static int32_t MenuEdit_ClampVoltage(int32_t value)
 static int32_t MenuEdit_ClampSampleRate(int32_t value)
 {
 
-    if(value < SAMPLE_RATE_MIN_MS)
+    if(value < (int32_t)CONFIG_SAMPLE_RATE_MIN)
     {
-        value = SAMPLE_RATE_MIN_MS;
+
+        value = CONFIG_SAMPLE_RATE_MIN;
+
     }
 
 
 
-    if(value > SAMPLE_RATE_MAX_MS)
+    if(value > (int32_t)CONFIG_SAMPLE_RATE_MAX)
     {
-        value = SAMPLE_RATE_MAX_MS;
+
+        value = CONFIG_SAMPLE_RATE_MAX;
+
     }
 
 
@@ -152,16 +168,20 @@ static int32_t MenuEdit_ClampSampleRate(int32_t value)
 static int32_t MenuEdit_ClampBaudRate(int32_t value)
 {
 
-    if(value < UART_BAUD_RATE_MIN)
+    if(value < (int32_t)CONFIG_BAUD_RATE_MIN)
     {
-        value = UART_BAUD_RATE_MIN;
+
+        value = CONFIG_BAUD_RATE_MIN;
+
     }
 
 
 
-    if(value > UART_BAUD_RATE_MAX)
+    if(value > (int32_t)CONFIG_BAUD_RATE_MAX)
     {
-        value = UART_BAUD_RATE_MAX;
+
+        value = CONFIG_BAUD_RATE_MAX;
+
     }
 
 
@@ -171,9 +191,42 @@ static int32_t MenuEdit_ClampBaudRate(int32_t value)
 }
 
 
+/*
+ * Clamp calibration offset value.
+ *
+ * Unit:
+ *
+ *      0.1 Volt
+ *
+ * Range:
+ *
+ *      -200 ... +200
+ *
+ */
+static int32_t MenuEdit_ClampOffset(int32_t value)
+{
+
+    if(value < CONFIG_OFFSET_MIN)
+    {
+
+        value = CONFIG_OFFSET_MIN;
+
+    }
 
 
 
+    if(value > CONFIG_OFFSET_MAX)
+    {
+
+        value = CONFIG_OFFSET_MAX;
+
+    }
+
+
+
+    return value;
+
+}
 
 
 /*
@@ -183,9 +236,8 @@ static int32_t MenuEdit_ClampBaudRate(int32_t value)
  */
 
 
-
 /*
- * Initialize edit engine.
+ * Initialize menu edit engine.
  */
 void MenuEdit_Init(void)
 {
@@ -202,8 +254,6 @@ void MenuEdit_Init(void)
     g_edit_old_value = 0;
 
 }
-
-
 
 
 
@@ -275,6 +325,22 @@ void MenuEdit_Start(MenuEditTarget_t target)
             break;
 
 
+        case EDIT_INPUT_VOLTAGE_OFFSET:
+
+            g_edit_value =
+                    (int32_t)Config_GetVinOffset();
+
+            break;
+
+
+        case EDIT_OUTPUT_VOLTAGE_OFFSET:
+
+            g_edit_value =
+                    (int32_t)Config_GetVoutOffset();
+
+            break;
+
+
 
         default:
 
@@ -286,18 +352,13 @@ void MenuEdit_Start(MenuEditTarget_t target)
 
 
 
-    /*
-     * Save old value.
-     *
-     * Used when BACK is pressed.
-     */
     g_edit_old_value = g_edit_value;
-
 
 
     g_edit_mode = true;
 
 }
+
 
 /*
  * ============================================================================
@@ -308,16 +369,15 @@ void MenuEdit_Start(MenuEditTarget_t target)
 
 /*
  * Confirm current edited value.
- *
- * The temporary value becomes
- * the active configuration value.
  */
 void MenuEdit_Confirm(void)
 {
 
     if(g_edit_mode == false)
     {
+
         return;
+
     }
 
 
@@ -373,7 +433,28 @@ void MenuEdit_Confirm(void)
         case EDIT_ALARM_MODE:
 
             Config_SetAlarmMode(
-                    (uint8_t)g_edit_value);
+                    (ConfigAlarmMode_t)g_edit_value);
+
+            break;
+
+
+
+        case EDIT_INPUT_VOLTAGE_OFFSET:
+
+            Config_SetVinOffset(
+                    (int16_t)g_edit_value);
+
+            Config_Save();
+
+            break;
+
+
+        case EDIT_OUTPUT_VOLTAGE_OFFSET:
+
+            Config_SetVoutOffset(
+                    (int16_t)g_edit_value);
+
+            Config_Save();
 
             break;
 
@@ -387,11 +468,7 @@ void MenuEdit_Confirm(void)
 
 
 
-    /*
-     * Save confirmed value.
-     */
     g_edit_old_value = g_edit_value;
-
 
 
     g_edit_mode = false;
@@ -407,21 +484,20 @@ void MenuEdit_Confirm(void)
 
 /*
  * Cancel current edit operation.
- *
- * Previous value is restored.
  */
 void MenuEdit_Cancel(void)
 {
 
     if(g_edit_mode == false)
     {
+
         return;
+
     }
 
 
 
     g_edit_value = g_edit_old_value;
-
 
 
     g_edit_mode = false;
@@ -430,8 +506,6 @@ void MenuEdit_Cancel(void)
     g_edit_target = EDIT_NONE;
 
 }
-
-
 
 
 
@@ -468,8 +542,6 @@ void MenuEdit_Exit(void)
 
 
 
-
-
 /*
  * ============================================================================
  * Value Modification
@@ -477,18 +549,17 @@ void MenuEdit_Exit(void)
  */
 
 
-
 /*
  * Increase edited value.
- *
- * UP button is mapped here.
  */
 void MenuEdit_Increment(void)
 {
 
     if(g_edit_mode == false)
     {
+
         return;
+
     }
 
 
@@ -496,15 +567,9 @@ void MenuEdit_Increment(void)
     switch(g_edit_target)
     {
 
-
-        /*
-         * Baud rate:
-         *
-         * 9600 step
-         */
         case EDIT_BAUD_RATE:
 
-            g_edit_value += 9600;
+            g_edit_value += MENU_EDIT_BAUD_STEP;
 
 
             g_edit_value =
@@ -515,13 +580,6 @@ void MenuEdit_Increment(void)
 
 
 
-
-
-        /*
-         * Sample rate:
-         *
-         * 100ms step
-         */
         case EDIT_SAMPLE_RATE:
 
             g_edit_value += SAMPLE_RATE_STEP_MS;
@@ -535,13 +593,6 @@ void MenuEdit_Increment(void)
 
 
 
-
-
-        /*
-         * Alarm enable:
-         *
-         * 0 -> 1
-         */
         case EDIT_ALARM_ENABLE:
 
             g_edit_value = 1;
@@ -550,18 +601,11 @@ void MenuEdit_Increment(void)
 
 
 
-
-
-        /*
-         * Voltage threshold:
-         *
-         * 5V step
-         */
         case EDIT_LOW_VOLTAGE_LIMIT:
 
         case EDIT_HIGH_VOLTAGE_LIMIT:
 
-            g_edit_value += VOLTAGE_LIMIT_STEP;
+            g_edit_value += CONFIG_VOLTAGE_STEP;
 
 
             g_edit_value =
@@ -572,22 +616,29 @@ void MenuEdit_Increment(void)
 
 
 
-
-
-        /*
-         * Alarm mode:
-         *
-         * Once -> Repeat
-         */
         case EDIT_ALARM_MODE:
 
             if(g_edit_value < CONFIG_ALARM_REPEAT)
             {
+
                 g_edit_value++;
+
             }
 
             break;
 
+        case EDIT_INPUT_VOLTAGE_OFFSET:
+
+        case EDIT_OUTPUT_VOLTAGE_OFFSET:
+
+            g_edit_value += CONFIG_OFFSET_STEP;
+
+
+            g_edit_value =
+                    MenuEdit_ClampOffset(
+                            g_edit_value);
+
+            break;
 
 
         default:
@@ -599,21 +650,17 @@ void MenuEdit_Increment(void)
 }
 
 
-
-
-
-
 /*
  * Decrease edited value.
- *
- * DOWN button is mapped here.
  */
 void MenuEdit_Decrement(void)
 {
 
     if(g_edit_mode == false)
     {
+
         return;
+
     }
 
 
@@ -621,15 +668,9 @@ void MenuEdit_Decrement(void)
     switch(g_edit_target)
     {
 
-
-        /*
-         * Baud rate:
-         *
-         * 9600 step
-         */
         case EDIT_BAUD_RATE:
 
-            g_edit_value -= 9600;
+            g_edit_value -= MENU_EDIT_BAUD_STEP;
 
 
             g_edit_value =
@@ -640,13 +681,6 @@ void MenuEdit_Decrement(void)
 
 
 
-
-
-        /*
-         * Sample rate:
-         *
-         * 100ms step
-         */
         case EDIT_SAMPLE_RATE:
 
             g_edit_value -= SAMPLE_RATE_STEP_MS;
@@ -660,13 +694,6 @@ void MenuEdit_Decrement(void)
 
 
 
-
-
-        /*
-         * Alarm enable:
-         *
-         * 1 -> 0
-         */
         case EDIT_ALARM_ENABLE:
 
             g_edit_value = 0;
@@ -675,18 +702,11 @@ void MenuEdit_Decrement(void)
 
 
 
-
-
-        /*
-         * Voltage threshold:
-         *
-         * 5V step
-         */
         case EDIT_LOW_VOLTAGE_LIMIT:
 
         case EDIT_HIGH_VOLTAGE_LIMIT:
 
-            g_edit_value -= VOLTAGE_LIMIT_STEP;
+            g_edit_value -= CONFIG_VOLTAGE_STEP;
 
 
             g_edit_value =
@@ -697,22 +717,30 @@ void MenuEdit_Decrement(void)
 
 
 
-
-
-        /*
-         * Alarm mode:
-         *
-         * Repeat -> Once
-         */
         case EDIT_ALARM_MODE:
 
             if(g_edit_value > CONFIG_ALARM_ONCE)
             {
+
                 g_edit_value--;
+
             }
 
             break;
 
+
+        case EDIT_INPUT_VOLTAGE_OFFSET:
+
+        case EDIT_OUTPUT_VOLTAGE_OFFSET:
+
+            g_edit_value -= CONFIG_OFFSET_STEP;
+
+
+            g_edit_value =
+                    MenuEdit_ClampOffset(
+                            g_edit_value);
+
+            break;
 
 
         default:
@@ -724,6 +752,9 @@ void MenuEdit_Decrement(void)
 }
 
 
+
+
+
 /*
  * ============================================================================
  * Status Information API
@@ -733,11 +764,6 @@ void MenuEdit_Decrement(void)
 
 /*
  * Check edit mode status.
- *
- * Returns:
- *
- *      true  : editing active
- *      false : normal menu operation
  */
 bool MenuEdit_IsActive(void)
 {
@@ -765,17 +791,7 @@ MenuEditTarget_t MenuEdit_GetTarget(void)
 
 
 /*
- * Get current temporary edited value.
- *
- * Used by:
- *
- *      - menu_renderer.c
- *      - LCD display layer
- *
- * Example:
- *
- *      LCD_ShowNumber(
- *              MenuEdit_GetValue());
+ * Get current edited value.
  */
 int32_t MenuEdit_GetValue(void)
 {
@@ -786,10 +802,117 @@ int32_t MenuEdit_GetValue(void)
 
 
 
+void MenuEdit_GetDisplayString(
+        char *buffer,
+        uint16_t size)
+{
 
+    if((buffer == NULL) || (size == 0U))
+    {
+        return;
+    }
+
+    switch(g_edit_target)
+    {
+
+        case EDIT_BAUD_RATE:
+
+            snprintf(buffer,
+                     size,
+                     "%lu",
+                     (unsigned long)g_edit_value);
+
+            break;
+
+
+
+        case EDIT_SAMPLE_RATE:
+
+            snprintf(buffer,
+                     size,
+                     "%ld ms",
+                     (long)g_edit_value);
+
+            break;
+
+
+
+        case EDIT_ALARM_ENABLE:
+
+            snprintf(buffer,
+                     size,
+                     "%s",
+                     (g_edit_value != 0) ? "ON" : "OFF");
+
+            break;
+
+
+
+        case EDIT_ALARM_MODE:
+
+            snprintf(buffer,
+                     size,
+                     "%s",
+                     (g_edit_value == CONFIG_ALARM_ONCE) ?
+                     "ONCE" :
+                     "REPEAT");
+
+            break;
+
+
+
+        case EDIT_LOW_VOLTAGE_LIMIT:
+
+        case EDIT_HIGH_VOLTAGE_LIMIT:
+
+            snprintf(buffer,
+                     size,
+                     "%ld V",
+                     (long)g_edit_value);
+
+            break;
+
+
+
+        case EDIT_INPUT_VOLTAGE_OFFSET:
+
+        case EDIT_OUTPUT_VOLTAGE_OFFSET:
+        {
+            long value = (long)g_edit_value;
+
+            char sign = '+';
+
+            if(value < 0)
+            {
+                sign = '-';
+                value = -value;
+            }
+
+            snprintf(buffer,
+                     size,
+                     "%c%ld.%01ldV",
+                     sign,
+                     value / 10,
+                     value % 10);
+
+            break;
+        }
+
+
+
+        default:
+
+            buffer[0] = '\0';
+
+            break;
+
+    }
+
+}
 
 /******************************************************************************
  *
  *                              END OF FILE
  *
  ******************************************************************************/
+

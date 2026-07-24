@@ -14,27 +14,29 @@
  *
  * Description:
  *
- *      This module manages runtime configuration values.
+ *      Runtime configuration manager.
  *
- *      Responsibilities:
+ *      This module stores and manages all adjustable parameters:
  *
- *      - Initialize configuration values.
- *      - Provide default configuration.
- *      - Provide runtime access API.
- *      - Validate adjustable parameters.
+ *          - UART Baud Rate
+ *          - Sample Rate
+ *          - Alarm Settings
+ *          - Voltage Limits
+ *          - Calibration Offsets
  *
  *
  *      This module does NOT handle:
  *
- *      - Flash hardware access.
- *      - Menu processing.
- *      - LCD display.
- *      - UART communication.
+ *          - LCD
+ *          - Menu
+ *          - Flash driver implementation
+ *          - ADC measurement
  *
  ******************************************************************************/
 
 #include "config.h"
-
+#include "stm32f1xx_hal.h"
+#include <string.h>
 
 
 /*
@@ -45,40 +47,20 @@
 
 
 /*
- * Alarm operation mode.
- *
- * Once:
- *
- *      Alarm triggers one time.
- *
- *
- * Repeat:
- *
- *      Alarm continues while
- *      fault condition exists.
- */
-
-
-
-
-/*
- * Runtime configuration structure.
- *
- * All adjustable application parameters
- * are stored here.
+ * Runtime configuration storage.
  */
 typedef struct
 {
 
     /*
-     * UART baud rate.
+     * UART communication speed.
      */
     uint32_t baud_rate;
 
 
 
     /*
-     * ADC sampling interval.
+     * ADC sample interval.
      *
      * Unit:
      *
@@ -89,7 +71,7 @@ typedef struct
 
 
     /*
-     * Low voltage alarm threshold.
+     * Low voltage alarm limit.
      *
      * Unit:
      *
@@ -100,7 +82,7 @@ typedef struct
 
 
     /*
-     * High voltage alarm threshold.
+     * High voltage alarm limit.
      *
      * Unit:
      *
@@ -111,30 +93,77 @@ typedef struct
 
 
     /*
-     * Alarm enable state.
+     * Alarm enable.
      */
     uint8_t alarm_enabled;
 
 
 
     /*
-     * Alarm operation mode.
+     * Alarm mode.
      */
     ConfigAlarmMode_t alarm_mode;
 
 
 
     /*
-     * Stream enable state.
+     * Stream enable.
      */
     uint8_t stream_enabled;
+
+
+
+    /*
+     * Input voltage calibration offset.
+     *
+     * Unit:
+     *
+     *      0.1 Volt
+     *
+     * Range:
+     *
+     *      -200 ... +200
+     *
+     */
+    int16_t vin_offset;
+
+
+
+    /*
+     * Output voltage calibration offset.
+     *
+     * Unit:
+     *
+     *      0.1 Volt
+     *
+     * Range:
+     *
+     *      -200 ... +200
+     *
+     */
+    int16_t vout_offset;
 
 
 
 } ConfigData_t;
 
 
+/*
+ * ============================================================================
+ * Flash Storage Structure
+ * ============================================================================
+ */
 
+/*
+ * Flash image stored in internal Flash.
+ */
+typedef struct
+{
+    uint32_t magic;
+
+    ConfigData_t data;
+
+} ConfigFlash_t;
 
 
 /*
@@ -151,6 +180,18 @@ static ConfigData_t config_data;
 
 
 
+/*
+ * Flash image buffer.
+ */
+static ConfigFlash_t flash_image;
+
+
+/*
+ * Flash memory pointer.
+ */
+static const ConfigFlash_t *flash_config =
+    (const ConfigFlash_t *)CONFIG_FLASH_ADDRESS;
+
 
 
 /*
@@ -160,14 +201,188 @@ static ConfigData_t config_data;
  */
 
 
+
+static void Config_LoadDefault(void);
+
+static uint16_t Config_ClampVoltage(
+        uint16_t value);
+
+static void Config_ValidateVoltageLimits(void);
+
+static uint32_t Config_ClampSampleRate(
+        uint32_t value);
+
+static uint32_t Config_ClampBaudRate(
+        uint32_t value);
+
+static int16_t Config_ClampOffset(
+        int16_t value);
+
+static ConfigAlarmMode_t Config_ValidateAlarmMode(
+        ConfigAlarmMode_t mode);
+
+static bool Config_ReadFlash(void);
+
+static bool Config_WriteFlash(void);
+
+
+
+/*
+ * Read configuration from Flash.
+ */
+static bool Config_ReadFlash(void)
+{
+
+    if(flash_config->magic != CONFIG_MAGIC_NUMBER)
+    {
+
+        return false;
+
+    }
+
+    memcpy(&config_data,
+           &flash_config->data,
+           sizeof(ConfigData_t));
+
+
+
+    config_data.baud_rate =
+            Config_ClampBaudRate(
+                    config_data.baud_rate);
+
+    config_data.sample_rate_ms =
+            Config_ClampSampleRate(
+                    config_data.sample_rate_ms);
+
+    config_data.voltage_low_limit =
+            Config_ClampVoltage(
+                    config_data.voltage_low_limit);
+
+    config_data.voltage_high_limit =
+            Config_ClampVoltage(
+                    config_data.voltage_high_limit);
+
+    Config_ValidateVoltageLimits();
+
+    config_data.vin_offset =
+            Config_ClampOffset(
+                    config_data.vin_offset);
+
+    config_data.vout_offset =
+            Config_ClampOffset(
+                    config_data.vout_offset);
+
+    config_data.alarm_mode =
+            Config_ValidateAlarmMode(
+                    config_data.alarm_mode);
+
+    config_data.alarm_enabled =
+            (config_data.alarm_enabled != 0U) ? 1U : 0U;
+
+    config_data.stream_enabled =
+            (config_data.stream_enabled != 0U) ? 1U : 0U;
+
+
+
+
+
+    return true;
+
+}
+
+
+
+/*
+ * Write configuration into Flash.
+ */
+static bool Config_WriteFlash(void)
+{
+
+    HAL_StatusTypeDef status;
+
+    FLASH_EraseInitTypeDef erase;
+
+    uint32_t page_error = 0U;
+
+    uint32_t address;
+
+    uint32_t *source;
+
+
+
+    flash_image.magic = CONFIG_MAGIC_NUMBER;
+
+    memcpy(&flash_image.data,
+           &config_data,
+           sizeof(ConfigData_t));
+
+
+
+    HAL_FLASH_Unlock();
+
+
+
+    erase.TypeErase = FLASH_TYPEERASE_PAGES;
+    erase.PageAddress = CONFIG_FLASH_ADDRESS;
+    erase.NbPages = 1U;
+
+    status = HAL_FLASHEx_Erase(&erase,
+                               &page_error);
+
+    if(status != HAL_OK)
+    {
+
+        HAL_FLASH_Lock();
+
+        return false;
+
+    }
+
+
+    address = CONFIG_FLASH_ADDRESS;
+
+    source = (uint32_t *)&flash_image;
+
+
+
+    uint32_t words =
+            (sizeof(ConfigFlash_t) + 3U) / 4U;
+
+
+
+    for(uint32_t i = 0U;
+        i < words;
+        i++)
+    {
+
+        status = HAL_FLASH_Program(
+                    FLASH_TYPEPROGRAM_WORD,
+                    address,
+                    source[i]);
+
+        if(status != HAL_OK)
+        {
+
+            HAL_FLASH_Lock();
+
+            return false;
+
+        }
+
+        address += 4U;
+
+    }
+
+
+    HAL_FLASH_Lock();
+
+    return true;
+
+}
+
+
 /*
  * Load factory default values.
- *
- * Used by:
- *
- * - First startup.
- * - Restore Default command.
- * - Invalid configuration data.
  */
 static void Config_LoadDefault(void)
 {
@@ -183,22 +398,22 @@ static void Config_LoadDefault(void)
 
 
     config_data.voltage_low_limit =
-            VOLTAGE_LOW_LIMIT_DEFAULT;
+            CONFIG_LOW_VOLTAGE_DEFAULT;
 
 
 
     config_data.voltage_high_limit =
-            VOLTAGE_HIGH_LIMIT_DEFAULT;
+            CONFIG_HIGH_VOLTAGE_DEFAULT;
 
 
 
     config_data.alarm_enabled =
-            CONFIG_BUZZER_DEFAULT_ENABLE;
+            CONFIG_ALARM_ENABLE_DEFAULT;
 
 
 
     config_data.alarm_mode =
-            CONFIG_ALARM_REPEAT;
+            CONFIG_ALARM_MODE_DEFAULT;
 
 
 
@@ -207,15 +422,62 @@ static void Config_LoadDefault(void)
 
 
 
+    /*
+     * Calibration default:
+     *
+     *      No correction
+     */
+
+
+    config_data.vin_offset =
+            CONFIG_VIN_OFFSET_DEFAULT;
+
+    config_data.vout_offset =
+            CONFIG_VOUT_OFFSET_DEFAULT;
+
+
+
 }
 
+
+
+
+
 /*
- * Check voltage limit relationship.
- *
- * Rule:
- *
- *      High voltage must always
- *      be greater than low voltage.
+ * Clamp voltage limit.
+ */
+static uint16_t Config_ClampVoltage(
+        uint16_t value)
+{
+
+    if(value < CONFIG_VOLTAGE_LIMIT_MIN)
+    {
+
+        value = CONFIG_VOLTAGE_LIMIT_MIN;
+
+    }
+
+
+
+    if(value > CONFIG_VOLTAGE_LIMIT_MAX)
+    {
+
+        value = CONFIG_VOLTAGE_LIMIT_MAX;
+
+    }
+
+
+
+    return value;
+
+}
+
+
+
+
+
+/*
+ * Validate voltage limits.
  */
 static void Config_ValidateVoltageLimits(void)
 {
@@ -226,20 +488,22 @@ static void Config_ValidateVoltageLimits(void)
 
         config_data.voltage_high_limit =
                 config_data.voltage_low_limit +
-                VOLTAGE_LIMIT_STEP;
+                CONFIG_VOLTAGE_STEP;
+
 
 
         if(config_data.voltage_high_limit >
-           VOLTAGE_LIMIT_MAX)
+           CONFIG_VOLTAGE_LIMIT_MAX)
         {
 
             config_data.voltage_high_limit =
-                    VOLTAGE_LIMIT_MAX;
+                    CONFIG_VOLTAGE_LIMIT_MAX;
+
 
 
             config_data.voltage_low_limit =
-                    VOLTAGE_LIMIT_MAX -
-                    VOLTAGE_LIMIT_STEP;
+                    CONFIG_VOLTAGE_LIMIT_MAX -
+                    CONFIG_VOLTAGE_STEP;
 
         }
 
@@ -249,11 +513,143 @@ static void Config_ValidateVoltageLimits(void)
 
 
 
+/*
+ * Clamp sample rate.
+ */
+static uint32_t Config_ClampSampleRate(
+        uint32_t value)
+{
+
+    if(value < CONFIG_SAMPLE_RATE_MIN)
+    {
+
+        value = CONFIG_SAMPLE_RATE_MIN;
+
+    }
+
+
+
+    if(value > CONFIG_SAMPLE_RATE_MAX)
+    {
+
+        value = CONFIG_SAMPLE_RATE_MAX;
+
+    }
+
+
+
+    return value;
+
+}
+
+
+
+
+
+/*
+ * Clamp baud rate.
+ */
+static uint32_t Config_ClampBaudRate(
+        uint32_t value)
+{
+
+    if(value < CONFIG_BAUD_RATE_MIN)
+    {
+
+        value = CONFIG_BAUD_RATE_MIN;
+
+    }
+
+
+
+    if(value > CONFIG_BAUD_RATE_MAX)
+    {
+
+        value = CONFIG_BAUD_RATE_MAX;
+
+    }
+
+
+
+    return value;
+
+}
+
+
+
+
+
+/*
+ * Clamp calibration offset.
+ *
+ * Internal unit:
+ *
+ *      0.1 Volt
+ *
+ *
+ * Range:
+ *
+ *      -20.0V ... +20.0V
+ *
+ */
+static int16_t Config_ClampOffset(
+        int16_t value)
+{
+
+    if(value < CONFIG_OFFSET_MIN)
+    {
+
+        value = CONFIG_OFFSET_MIN;
+
+    }
+
+
+
+    if(value > CONFIG_OFFSET_MAX)
+    {
+
+        value = CONFIG_OFFSET_MAX;
+
+    }
+
+
+
+    return value;
+
+}
+
+
+
+
+
+/*
+ * Validate alarm mode.
+ */
+static ConfigAlarmMode_t Config_ValidateAlarmMode(
+        ConfigAlarmMode_t mode)
+{
+
+    if((mode != CONFIG_ALARM_ONCE) &&
+       (mode != CONFIG_ALARM_REPEAT))
+    {
+
+        mode = CONFIG_ALARM_MODE_DEFAULT;
+
+    }
+
+
+
+    return mode;
+
+}
+
+
+
 
 
 /*
  * ============================================================================
- * Public Functions
+ * Initialization
  * ============================================================================
  */
 
@@ -261,53 +657,55 @@ static void Config_ValidateVoltageLimits(void)
 /*
  * Initialize configuration manager.
  */
+
+
+
 void Config_Init(void)
 {
 
-    Config_LoadDefault();
+    if(Config_ReadFlash() == false)
+    {
+
+        Config_LoadDefault();
+
+        Config_WriteFlash();
+
+    }
+
+    Config_ValidateVoltageLimits();
 
 }
 
 
 
 
-
 /*
- * Restore factory configuration.
+ * Restore factory defaults.
  */
+
+
 void Config_ResetDefault(void)
 {
 
     Config_LoadDefault();
 
-}
-
-
-
-
-
-/*
- * Get complete configuration object.
- *
- * Read-only access only.
- */
-const void *Config_Get(void)
-{
-
-    return &config_data;
+    Config_Save();
 
 }
+
+
+
 
 
 /*
  * ============================================================================
- * Baud Rate API
+ * UART Baud Rate API
  * ============================================================================
  */
 
 
 /*
- * Get current UART baud rate.
+ * Get current baud rate.
  */
 uint32_t Config_GetBaudRate(void)
 {
@@ -321,33 +719,15 @@ uint32_t Config_GetBaudRate(void)
 
 
 /*
- * Set UART baud rate.
- *
- * Value is limited according to
- * project configuration.
+ * Set baud rate.
  */
-void Config_SetBaudRate(uint32_t baud_rate)
+void Config_SetBaudRate(
+        uint32_t baud_rate)
 {
 
-    if(baud_rate < UART_BAUD_RATE_MIN)
-    {
-
-        baud_rate = UART_BAUD_RATE_MIN;
-
-    }
-
-
-
-    if(baud_rate > UART_BAUD_RATE_MAX)
-    {
-
-        baud_rate = UART_BAUD_RATE_MAX;
-
-    }
-
-
-
-    config_data.baud_rate = baud_rate;
+    config_data.baud_rate =
+            Config_ClampBaudRate(
+                    baud_rate);
 
 }
 
@@ -363,11 +743,7 @@ void Config_SetBaudRate(uint32_t baud_rate)
 
 
 /*
- * Get ADC sample interval.
- *
- * Unit:
- *
- *      milliseconds
+ * Get sample interval.
  */
 uint32_t Config_GetSampleRate(void)
 {
@@ -381,31 +757,15 @@ uint32_t Config_GetSampleRate(void)
 
 
 /*
- * Set ADC sample interval.
+ * Set sample interval.
  */
-void Config_SetSampleRate(uint32_t sample_rate_ms)
+void Config_SetSampleRate(
+        uint32_t sample_rate_ms)
 {
 
-    if(sample_rate_ms < SAMPLE_RATE_MIN_MS)
-    {
-
-        sample_rate_ms = SAMPLE_RATE_MIN_MS;
-
-    }
-
-
-
-    if(sample_rate_ms > SAMPLE_RATE_MAX_MS)
-    {
-
-        sample_rate_ms = SAMPLE_RATE_MAX_MS;
-
-    }
-
-
-
     config_data.sample_rate_ms =
-            sample_rate_ms;
+            Config_ClampSampleRate(
+                    sample_rate_ms);
 
 }
 
@@ -415,17 +775,13 @@ void Config_SetSampleRate(uint32_t sample_rate_ms)
 
 /*
  * ============================================================================
- * Voltage Threshold API
+ * Voltage Limit API
  * ============================================================================
  */
 
 
 /*
- * Get low voltage threshold.
- *
- * Unit:
- *
- *      Volt
+ * Get low voltage limit.
  */
 uint16_t Config_GetLowVoltageLimit(void)
 {
@@ -439,31 +795,15 @@ uint16_t Config_GetLowVoltageLimit(void)
 
 
 /*
- * Set low voltage threshold.
+ * Set low voltage limit.
  */
-void Config_SetLowVoltageLimit(uint16_t limit)
+void Config_SetLowVoltageLimit(
+        uint16_t limit)
 {
 
-    if(limit < VOLTAGE_LIMIT_MIN)
-    {
-
-        limit = VOLTAGE_LIMIT_MIN;
-
-    }
-
-
-
-    if(limit > VOLTAGE_LIMIT_MAX)
-    {
-
-        limit = VOLTAGE_LIMIT_MAX;
-
-    }
-
-
-
     config_data.voltage_low_limit =
-            limit;
+            Config_ClampVoltage(
+                    limit);
 
 
 
@@ -476,11 +816,7 @@ void Config_SetLowVoltageLimit(uint16_t limit)
 
 
 /*
- * Get high voltage threshold.
- *
- * Unit:
- *
- *      Volt
+ * Get high voltage limit.
  */
 uint16_t Config_GetHighVoltageLimit(void)
 {
@@ -494,40 +830,21 @@ uint16_t Config_GetHighVoltageLimit(void)
 
 
 /*
- * Set high voltage threshold.
+ * Set high voltage limit.
  */
-void Config_SetHighVoltageLimit(uint16_t limit)
+void Config_SetHighVoltageLimit(
+        uint16_t limit)
 {
 
-    if(limit < VOLTAGE_LIMIT_MIN)
-    {
-
-        limit = VOLTAGE_LIMIT_MIN;
-
-    }
-
-
-
-    if(limit > VOLTAGE_LIMIT_MAX)
-    {
-
-        limit = VOLTAGE_LIMIT_MAX;
-
-    }
-
-
-
     config_data.voltage_high_limit =
-            limit;
+            Config_ClampVoltage(
+                    limit);
 
 
 
     Config_ValidateVoltageLimits();
 
 }
-
-
-
 
 
 /*
@@ -538,12 +855,12 @@ void Config_SetHighVoltageLimit(uint16_t limit)
 
 
 /*
- * Get alarm mode.
+ * Get current alarm mode.
  */
-uint8_t Config_GetAlarmMode(void)
+ConfigAlarmMode_t Config_GetAlarmMode(void)
 {
 
-    return (uint8_t)config_data.alarm_mode;
+    return config_data.alarm_mode;
 
 }
 
@@ -554,20 +871,13 @@ uint8_t Config_GetAlarmMode(void)
 /*
  * Set alarm mode.
  */
-void Config_SetAlarmMode(uint8_t mode)
+void Config_SetAlarmMode(
+        ConfigAlarmMode_t mode)
 {
 
-    if(mode > CONFIG_ALARM_REPEAT)
-    {
-
-        mode = CONFIG_ALARM_REPEAT;
-
-    }
-
-
-
     config_data.alarm_mode =
-            (ConfigAlarmMode_t)mode;
+            Config_ValidateAlarmMode(
+                    mode);
 
 }
 
@@ -583,7 +893,7 @@ void Config_SetAlarmMode(uint8_t mode)
 
 
 /*
- * Get alarm enable state.
+ * Get alarm enable status.
  */
 uint8_t Config_GetAlarmEnable(void)
 {
@@ -597,13 +907,24 @@ uint8_t Config_GetAlarmEnable(void)
 
 
 /*
- * Set alarm enable state.
+ * Set alarm enable status.
  */
-void Config_SetAlarmEnable(uint8_t enable)
+void Config_SetAlarmEnable(
+        uint8_t enable)
 {
 
-    config_data.alarm_enabled =
-            (enable != 0U) ? 1U : 0U;
+    if(enable != 0U)
+    {
+
+        config_data.alarm_enabled = 1U;
+
+    }
+    else
+    {
+
+        config_data.alarm_enabled = 0U;
+
+    }
 
 }
 
@@ -613,13 +934,94 @@ void Config_SetAlarmEnable(uint8_t enable)
 
 /*
  * ============================================================================
- * Stream API
+ * Calibration Offset API
+ * ============================================================================
+ *
+ * Internal unit:
+ *
+ *      0.1 Volt
+ *
+ *
+ * Example:
+ *
+ *      15  = +1.5V
+ *
+ *      -25 = -2.5V
+ *
+ */
+
+
+/*
+ * Get Vin calibration offset.
+ */
+int16_t Config_GetVinOffset(void)
+{
+
+    return config_data.vin_offset;
+
+}
+
+
+
+
+
+/*
+ * Set Vin calibration offset.
+ */
+void Config_SetVinOffset(
+        int16_t offset)
+{
+
+    config_data.vin_offset =
+            Config_ClampOffset(
+                    offset);
+
+}
+
+
+
+
+
+/*
+ * Get Vout calibration offset.
+ */
+int16_t Config_GetVoutOffset(void)
+{
+
+    return config_data.vout_offset;
+
+}
+
+
+
+
+
+/*
+ * Set Vout calibration offset.
+ */
+void Config_SetVoutOffset(
+        int16_t offset)
+{
+
+    config_data.vout_offset =
+            Config_ClampOffset(
+                    offset);
+
+}
+
+
+
+
+
+/*
+ * ============================================================================
+ * Stream Configuration API
  * ============================================================================
  */
 
 
 /*
- * Get stream state.
+ * Get stream enable status.
  */
 uint8_t Config_GetStreamEnable(void)
 {
@@ -633,13 +1035,24 @@ uint8_t Config_GetStreamEnable(void)
 
 
 /*
- * Set stream state.
+ * Set stream enable status.
  */
-void Config_SetStreamEnable(uint8_t enable)
+void Config_SetStreamEnable(
+        uint8_t enable)
 {
 
-    config_data.stream_enabled =
-            (enable != 0U) ? 1U : 0U;
+    if(enable != 0U)
+    {
+
+        config_data.stream_enabled = 1U;
+
+    }
+    else
+    {
+
+        config_data.stream_enabled = 0U;
+
+    }
 
 }
 
@@ -649,7 +1062,7 @@ void Config_SetStreamEnable(uint8_t enable)
 
 /*
  * ============================================================================
- * Storage API
+ * Flash Storage Interface
  * ============================================================================
  */
 
@@ -657,17 +1070,16 @@ void Config_SetStreamEnable(uint8_t enable)
 /*
  * Save configuration.
  *
- * Flash implementation will be added
- * after configuration structure is stable.
+ * Flash implementation will be
+ * integrated with storage driver.
  */
+
+
+
 void Config_Save(void)
 {
 
-    /*
-     * TODO:
-     *
-     * Implement STM32 Flash write.
-     */
+    (void)Config_WriteFlash();
 
 }
 
@@ -678,26 +1090,128 @@ void Config_Save(void)
 /*
  * Load configuration.
  *
- * Flash implementation will be added
- * after configuration structure is stable.
+ * Flash implementation will be
+ * integrated with storage driver.
  */
+
+
+
 void Config_Load(void)
 {
 
-    /*
-     * TODO:
-     *
-     * Implement STM32 Flash read.
-     */
+    if(Config_ReadFlash() == false)
+    {
+
+        Config_LoadDefault();
+
+        Config_Save();
+
+    }
+
+    Config_ValidateVoltageLimits();
 
 }
 
 
 
-
-
-/******************************************************************************
+/*
+ * ============================================================================
+ * Configuration Validation Interface
+ * ============================================================================
  *
- *                              END OF FILE
+ * This section intentionally contains no public
+ * validation functions.
+ *
+ * All validation is performed internally:
+ *
+ *      - Voltage limits
+ *      - Calibration offsets
+ *      - Baud rate
+ *      - Sample rate
+ *      - Alarm mode
+ *
+ */
+
+
+/*
+ * ============================================================================
+ * End Of File
+ * ============================================================================
+ *
+ * File:
+ *
+ *      config.c
+ *
+ *
+ * Version:
+ *
+ *      v2.0.2
+ *
+ *
+ * Implemented:
+ *
+ *      - Runtime configuration manager
+ *      - Factory default initialization
+ *      - Baud rate management
+ *      - Sample rate management
+ *      - Alarm configuration
+ *      - Voltage threshold management
+ *      - Vin calibration offset
+ *      - Vout calibration offset
+ *      - Stream configuration
+ *
+ *
+ * Calibration:
+ *
+ *      Vin Offset
+ *
+ *          Range:
+ *              -20.0V ... +20.0V
+ *
+ *          Step:
+ *              0.1V
+ *
+ *
+ *      Vout Offset
+ *
+ *          Range:
+ *              -20.0V ... +20.0V
+ *
+ *          Step:
+ *              0.1V
+ *
+ *
+ * Internal Representation:
+ *
+ *      1 unit = 0.1 Volt
+ *
+ *
+ * Example:
+ *
+ *      +20.0V  ->  200
+ *
+ *       0.0V   ->    0
+ *
+ *      -20.0V  -> -200
+ *
+ *
+ * Dependencies:
+ *
+ *      config.h
+ *
+ *
+ * No dependency:
+ *
+ *      - LCD
+ *      - Menu
+ *      - UART
+ *      - ADC
+ *      - HAL
+ *
+ *
+ * Target:
+ *
+ *      STM32F103C8T6
+ *
  *
  ******************************************************************************/

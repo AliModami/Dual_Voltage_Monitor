@@ -44,7 +44,6 @@
 #include "lcd_display.h"
 #include "buzzer.h"
 #include "buttons.h"
-#include "menu_renderer.h"
 #include "menu_items.h"
 #include "menu_controller.h"
 #include "menu_renderer.h"
@@ -155,6 +154,8 @@ int main(void)
 
   MenuController_Init();
 
+  MenuEdit_Init();
+
   MenuRenderer_Init();
 
   ScreenManager_Init();
@@ -219,8 +220,23 @@ int main(void)
             {
 
 
-            case BUTTON_ID_UP:
+//            case BUTTON_ID_UP:
+//
+//
+//                if(MenuEdit_IsActive())
+//                {
+//                    MenuEdit_Increment();
+//                }
+//                else
+//                {
+//                    MenuController_MoveUp();
+//                }
+//
+//
+//                break;
 
+
+            case BUTTON_ID_UP:
 
                 if(MenuEdit_IsActive())
                 {
@@ -229,15 +245,46 @@ int main(void)
                 else
                 {
                     MenuController_MoveUp();
-                }
 
+                    printf("UP Page=%d Index=%d\r\n",
+                           MenuController_GetCurrentPageId(),
+                           MenuController_GetSelectedIndex());
+                }
 
                 break;
 
 
 
-            case BUTTON_ID_DOWN:
 
+
+
+
+
+
+
+
+
+
+
+//            case BUTTON_ID_DOWN:
+//
+//
+//                if(MenuEdit_IsActive())
+//                {
+//                    MenuEdit_Decrement();
+//                }
+//                else
+//                {
+//                    MenuController_MoveDown();
+//                }
+//
+//
+//                break;
+
+
+
+
+            case BUTTON_ID_DOWN:
 
                 if(MenuEdit_IsActive())
                 {
@@ -246,10 +293,37 @@ int main(void)
                 else
                 {
                     MenuController_MoveDown();
+
+                    printf("DOWN Page=%d Index=%d\r\n",
+                           MenuController_GetCurrentPageId(),
+                           MenuController_GetSelectedIndex());
                 }
 
-
                 break;
+
+
+
+
+
+
+
+
+
+
+
+
+//            case BUTTON_ID_ENTER:
+//
+//                if(MenuEdit_IsActive())
+//                {
+//                    MenuEdit_Confirm();
+//                }
+//                else
+//                {
+//                    MenuController_Enter();
+//                }
+//
+//                break;
 
 
 
@@ -261,10 +335,26 @@ int main(void)
                 }
                 else
                 {
+                    const MenuItem_t *item;
+
+                    item = MenuController_GetSelectedItem();
+
+                    if(item != 0)
+                    {
+                        printf("ENTER: Page=%d Index=%d Type=%d Child=%d Text=%s\r\n",
+                               MenuController_GetCurrentPageId(),
+                               MenuController_GetSelectedIndex(),
+                               item->type,
+                               item->child_page,
+                               item->text);
+                    }
+
                     MenuController_Enter();
                 }
 
                 break;
+
+
 
 
 

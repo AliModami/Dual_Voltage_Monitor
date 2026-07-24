@@ -54,10 +54,10 @@ extern "C" {
  * Line 0 : Page title
  * Line 1-3 : Menu items
  */
-#define MENU_RENDER_VISIBLE_ITEMS     3U
 
 
 
+#define MENU_RENDER_VISIBLE_ITEMS MENU_PAGE_VISIBLE_ITEMS
 
 /*
  * Renderer display mode.

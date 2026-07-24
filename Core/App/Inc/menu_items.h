@@ -244,8 +244,9 @@ typedef struct
     /*
      * Next page.
      *
-     * Used when one logical menu contains
-     * more than three items.
+ * Used for page based navigation.
+ *
+ * Each page represents one LCD screen.
      *
      * Example:
      *

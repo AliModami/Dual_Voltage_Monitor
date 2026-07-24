@@ -417,6 +417,38 @@ void MenuRenderer_Update(void)
                 break;
 
 
+            case EDIT_ALARM_ENABLE:
+
+                render_data.edit_title =
+                        "Edit Alarm Enable";
+
+                break;
+
+
+            case EDIT_LOW_VOLTAGE_LIMIT:
+
+                render_data.edit_title =
+                        "Edit Low Voltage";
+
+                break;
+
+
+            case EDIT_HIGH_VOLTAGE_LIMIT:
+
+                render_data.edit_title =
+                        "Edit High Voltage";
+
+                break;
+
+
+            case EDIT_ALARM_MODE:
+
+                render_data.edit_title =
+                        "Edit Alarm Mode";
+
+                break;
+
+
             default:
 
                 render_data.edit_title =

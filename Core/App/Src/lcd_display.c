@@ -49,11 +49,9 @@
  ******************************************************************************/
 
 #include "lcd_display.h"
-
 #include "lcd_i2c.h"
-
 #include "menu_renderer.h"
-
+#include "menu_edit.h"
 #include <stdio.h>
 
 /*
@@ -422,18 +420,90 @@ void LCD_Display_RenderMenu(void)
      * Check parameter edit mode.
      */
 
+//    if(menu->mode == MENU_RENDER_MODE_EDIT)
+//    {
+//
+//        char value_line[21];
+//
+//
+//        /*
+//         * Update edit screen without LCD clear.
+//         *
+//         * Only affected rows are rewritten.
+//         * This avoids flicker.
+//         */
+//
+//
+//        /*
+//         * Row 0:
+//         * Edit title
+//         */
+//        LCD_Display_ShowTitle(
+//                menu->edit_title);
+//
+//
+//
+//        /*
+//         * Prepare value text.
+//         */
+//        snprintf(
+//                value_line,
+//                sizeof(value_line),
+//                "Value: %ld",
+//                menu->edit_value);
+//
+//
+//
+//        /*
+//         * Row 1:
+//         * Current value
+//         */
+//        LCD_Display_PrintLine(
+//                1U,
+//                value_line);
+//
+//
+//
+//        /*
+//         * Clear unused rows.
+//         *
+//         * Prevent old menu text remaining.
+//         */
+//        LCD_Display_PrintLine(
+//                2U,
+//                "                    ");
+//
+//
+//
+//        /*
+//         * Show edit controls.
+//         *
+//         * UP    : Increase value
+//         * DOWN  : Decrease value
+//         * ENTER : Confirm value
+//         */
+//        LCD_Display_PrintLine(
+//                3U,
+//                "+  -       Enter=Set");
+//
+//
+//
+//        return;
+//
+//    }
+
+
+
     if(menu->mode == MENU_RENDER_MODE_EDIT)
     {
 
         char value_line[21];
 
+        MenuEditTarget_t target;
 
-        /*
-         * Update edit screen without LCD clear.
-         *
-         * Only affected rows are rewritten.
-         * This avoids flicker.
-         */
+
+        target = MenuEdit_GetTarget();
+
 
 
         /*
@@ -446,13 +516,170 @@ void LCD_Display_RenderMenu(void)
 
 
         /*
-         * Prepare value text.
+         * Generate human readable value.
          */
-        snprintf(
-                value_line,
-                sizeof(value_line),
-                "Value: %ld",
-                menu->edit_value);
+        switch(target)
+        {
+
+
+            case EDIT_BAUD_RATE:
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%ld bps",
+                        menu->edit_value);
+
+                break;
+
+
+
+            case EDIT_SAMPLE_RATE:
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%ld ms",
+                        menu->edit_value);
+
+                break;
+
+
+
+            case EDIT_ALARM_ENABLE:
+
+
+                if(menu->edit_value)
+                {
+                    snprintf(
+                            value_line,
+                            sizeof(value_line),
+                            "ON");
+                }
+                else
+                {
+                    snprintf(
+                            value_line,
+                            sizeof(value_line),
+                            "OFF");
+                }
+
+                break;
+
+
+
+
+            case EDIT_LOW_VOLTAGE_LIMIT:
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%ld V",
+                        menu->edit_value);
+
+                break;
+
+
+
+
+            case EDIT_HIGH_VOLTAGE_LIMIT:
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%ld V",
+                        menu->edit_value);
+
+                break;
+
+
+
+
+            case EDIT_INPUT_VOLTAGE_OFFSET:
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%.1f V",
+                        (float)menu->edit_value / 10.0f);
+
+                break;
+
+
+
+            case EDIT_OUTPUT_VOLTAGE_OFFSET:
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%.1f V",
+                        (float)menu->edit_value / 10.0f);
+
+                break;
+
+
+
+
+
+
+
+
+
+            case EDIT_ALARM_MODE:
+
+
+//                if(menu->edit_value == CONFIG_ALARM_REPEAT)
+//                {
+//                    snprintf(
+//                            value_line,
+//                            sizeof(value_line),
+//                            "REPEAT");
+//                }
+//                else
+//                {
+//                    snprintf(
+//                            value_line,
+//                            sizeof(value_line),
+//                            "ONCE");
+//                }
+
+
+            	if(menu->edit_value != 0)
+            	{
+            	    snprintf(
+            	        value_line,
+            	        sizeof(value_line),
+            	        "Repeat");
+            	}
+            	else
+            	{
+            	    snprintf(
+            	        value_line,
+            	        sizeof(value_line),
+            	        "Once");
+            	}
+
+
+
+
+
+
+                break;
+
+
+
+            default:
+
+
+                snprintf(
+                        value_line,
+                        sizeof(value_line),
+                        "%ld",
+                        menu->edit_value);
+
+                break;
+
+        }
 
 
 
@@ -467,9 +694,8 @@ void LCD_Display_RenderMenu(void)
 
 
         /*
-         * Clear unused rows.
-         *
-         * Prevent old menu text remaining.
+         * Row 2:
+         * Empty
          */
         LCD_Display_PrintLine(
                 2U,
@@ -478,25 +704,18 @@ void LCD_Display_RenderMenu(void)
 
 
         /*
-         * Show edit controls.
-         *
-         * UP    : Increase value
-         * DOWN  : Decrease value
-         * ENTER : Confirm value
+         * Row 3:
+         * Controls
          */
         LCD_Display_PrintLine(
                 3U,
-                "+  -       Enter=Set");
+                "UP/DN  ENTER=SAVE");
 
 
 
         return;
 
     }
-
-
-
-
 
 
 

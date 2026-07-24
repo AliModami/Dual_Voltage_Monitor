@@ -56,53 +56,60 @@ extern "C"
  * Defines the parameter currently
  * being edited.
  */
+
+
 typedef enum
 {
 
     EDIT_NONE = 0U,
-
 
     /*
      * UART communication speed.
      */
     EDIT_BAUD_RATE,
 
-
     /*
      * ADC sampling interval.
      */
     EDIT_SAMPLE_RATE,
-
 
     /*
      * Enable or disable alarm.
      */
     EDIT_ALARM_ENABLE,
 
-
     /*
      * Low voltage threshold.
      */
     EDIT_LOW_VOLTAGE_LIMIT,
-
 
     /*
      * High voltage threshold.
      */
     EDIT_HIGH_VOLTAGE_LIMIT,
 
-
     /*
      * Alarm operation mode.
-     *
-     * Once / Repeat
      */
-    EDIT_ALARM_MODE
+    EDIT_ALARM_MODE,
 
+    /*
+     * Input voltage calibration offset.
+     *
+     * Unit:
+     *      0.1 Volt
+     */
+    EDIT_INPUT_VOLTAGE_OFFSET,
+
+    /*
+     * Output voltage calibration offset.
+     *
+     * Unit:
+     *      0.1 Volt
+     */
+    EDIT_OUTPUT_VOLTAGE_OFFSET
 
 } MenuEditTarget_t;
-
-
 
 
 
@@ -132,7 +139,8 @@ void MenuEdit_Init(void);
 /*
  * Start editing selected parameter.
  */
-void MenuEdit_Start(MenuEditTarget_t target);
+void MenuEdit_Start(
+        MenuEditTarget_t target);
 
 
 
@@ -255,6 +263,63 @@ int32_t MenuEdit_GetValue(void);
 
 
 
+/*
+ * ============================================================================
+ * Display Support
+ * ============================================================================
+ */
+
+
+/*
+ * Generate human readable text
+ * for current edited value.
+ *
+ * This function converts internal
+ * numeric values into display text.
+ *
+ * Examples:
+ *
+ * Alarm Enable:
+ *
+ *      0  -> OFF
+ *      1  -> ON
+ *
+ *
+ * Alarm Mode:
+ *
+ *      0  -> ONCE
+ *      1  -> REPEAT
+ *
+ *
+ * Sample Rate:
+ *
+ *      500 -> 500 ms
+ *
+ *
+ * Voltage:
+ *
+ *      220 -> 220 V
+ *
+ *
+ * Baud Rate:
+ *
+ *      115200 -> 115200
+ *
+ *
+ * @param buffer
+ *      Output text buffer.
+ *
+ * @param size
+ *      Buffer size in bytes.
+ */
+void MenuEdit_GetDisplayString(
+        char *buffer,
+        uint16_t size);
+
+
+
+
+
 #ifdef __cplusplus
 }
 #endif
@@ -266,5 +331,21 @@ int32_t MenuEdit_GetValue(void);
 /******************************************************************************
  *
  *                              END OF FILE
+ *
+ *
+ * Version:
+ *
+ *      menu_edit.h
+ *
+ *      Clean Final v1.0.1
+ *
+ *
+ * Changes:
+ *
+ *      v1.0.1
+ *
+ *      - Added MenuEdit_GetDisplayString()
+ *      - Added display conversion interface
+ *      - Preserved existing API compatibility
  *
  ******************************************************************************/

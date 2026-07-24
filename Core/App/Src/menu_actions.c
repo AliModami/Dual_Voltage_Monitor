@@ -1,37 +1,347 @@
+/******************************************************************************
+ *
+ * @file    menu_actions.c
+ *
+ * @brief   Menu Action Implementation
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Project:
+ *
+ *      Dual Voltage Monitor
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Description:
+ *
+ *      This file implements application actions
+ *      called by the menu database.
+ *
+ *
+ *      Responsibilities:
+ *
+ *      - Connect menu selections to application modules.
+ *      - Start parameter edit operations.
+ *
+ *
+ *      This module does NOT handle:
+ *
+ *      - LCD rendering
+ *      - Button processing
+ *      - Menu navigation
+ *
+ ******************************************************************************/
+
 #include "menu_actions.h"
+
 #include "menu_edit.h"
-#include "screen_manager.h"
 
 
 
+
+/*
+ * ============================================================================
+ * General Menu Actions
+ * ============================================================================
+ */
+
+
+/*
+ * Open live monitor screen.
+ */
 void MenuAction_LiveMonitor(void)
 {
-    ScreenManager_SetScreen(SCREEN_LIVE_MONITOR);
+
+    /*
+     * TODO:
+     *
+     * Connect to Screen Manager.
+     *
+     */
+
 }
 
 
 
+
+
+/*
+ * Start UART streaming.
+ */
 void MenuAction_StartStream(void)
 {
-    ScreenManager_SetScreen(SCREEN_STREAM);
+
+    /*
+     * TODO:
+     *
+     * Connect to UART Stream Manager.
+     *
+     */
+
 }
 
 
 
+
+
+
+/*
+ * ============================================================================
+ * Stream Settings Actions
+ * ============================================================================
+ */
+
+
+/*
+ * Edit baud rate.
+ */
 void MenuAction_BaudRate(void)
 {
-    /*
-     * Start editing Baud Rate value.
-     */
-    MenuEdit_Start(EDIT_BAUD_RATE);
+
+    MenuEdit_Start(
+            EDIT_BAUD_RATE);
+
 }
 
 
 
+
+
+/*
+ * Edit sample rate.
+ */
 void MenuAction_SampleRate(void)
 {
-    /*
-     * Start editing Sample Rate value.
-     */
-    MenuEdit_Start(EDIT_SAMPLE_RATE);
+
+    MenuEdit_Start(
+            EDIT_SAMPLE_RATE);
+
 }
+
+
+
+
+
+
+/*
+ * ============================================================================
+ * Alarm Settings Actions
+ * ============================================================================
+ */
+
+
+/*
+ * Edit alarm enable state.
+ */
+void MenuAction_AlarmEnable(void)
+{
+
+    MenuEdit_Start(
+            EDIT_ALARM_ENABLE);
+
+}
+
+
+
+
+
+/*
+ * Edit low voltage limit.
+ */
+void MenuAction_LowVoltageLimit(void)
+{
+
+    MenuEdit_Start(
+            EDIT_LOW_VOLTAGE_LIMIT);
+
+}
+
+
+
+
+
+/*
+ * Edit high voltage limit.
+ */
+void MenuAction_HighVoltageLimit(void)
+{
+
+    MenuEdit_Start(
+            EDIT_HIGH_VOLTAGE_LIMIT);
+
+}
+
+
+
+
+
+/*
+ * Edit alarm mode.
+ */
+void MenuAction_AlarmMode(void)
+{
+
+    MenuEdit_Start(
+            EDIT_ALARM_MODE);
+
+}
+
+
+
+
+
+
+/*
+ * ============================================================================
+ * Calibration Actions
+ * ============================================================================
+ */
+
+
+/*
+ * Input voltage calibration offset.
+ */
+
+
+void MenuAction_InputVoltageOffset(void)
+{
+
+    MenuEdit_Start(
+            EDIT_INPUT_VOLTAGE_OFFSET);
+
+}
+
+
+
+
+
+/*
+ * Output voltage calibration offset.
+ */
+
+void MenuAction_OutputVoltageOffset(void)
+{
+
+    MenuEdit_Start(
+            EDIT_OUTPUT_VOLTAGE_OFFSET);
+
+}
+
+
+
+
+
+
+/*
+ * ============================================================================
+ * Service Mode Actions
+ * ============================================================================
+ */
+
+
+/*
+ * Button diagnostic.
+ */
+void MenuAction_ButtonTest(void)
+{
+
+    /*
+     * TODO:
+     *
+     * Connect button test module.
+     *
+     */
+
+}
+
+
+
+
+
+/*
+ * Buzzer diagnostic.
+ */
+void MenuAction_BuzzerTest(void)
+{
+
+    /*
+     * TODO:
+     *
+     * Connect buzzer test module.
+     *
+     */
+
+}
+
+
+
+
+
+/*
+ * LCD diagnostic.
+ */
+void MenuAction_LCDTest(void)
+{
+
+    /*
+     * TODO:
+     *
+     * Connect LCD test module.
+     *
+     */
+
+}
+
+
+
+
+
+/*
+ * Factory calibration.
+ */
+void MenuAction_FactoryCalibration(void)
+{
+
+    /*
+     * TODO:
+     *
+     * Connect factory calibration routine.
+     *
+     */
+
+}
+
+
+
+
+
+/*
+ * Restore default configuration.
+ */
+void MenuAction_RestoreDefault(void)
+{
+
+    /*
+     * TODO:
+     *
+     * Connect configuration reset routine.
+     *
+     */
+
+}
+
+
+
+
+
+/******************************************************************************
+ *
+ *                              END OF FILE
+ *
+ *      menu_actions.c
+ *
+ *      Version:
+ *
+ *          v1.0.1
+ *
+ ******************************************************************************/
