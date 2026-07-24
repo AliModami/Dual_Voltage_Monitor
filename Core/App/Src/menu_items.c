@@ -80,8 +80,6 @@ static void Action_FactoryCalibration(void);
 
 static void Action_RestoreDefault(void);
 
-static void Action_SystemInfo(void);
-
 
 
 
@@ -197,10 +195,10 @@ static const MenuItem_t main_page2_items[] =
 {
 
     {
-        .text       = "System Info",
-        .type       = MENU_ITEM_ACTION,
-        .child_page = MENU_INVALID_PAGE,
-        .action     = Action_SystemInfo
+    	    .text       = "System Info",
+    	    .type       = MENU_ITEM_SUBMENU,
+    	    .child_page = MENU_PAGE_SYSTEM_INFO,
+    	    .action     = 0
     }
 
 };
@@ -430,10 +428,10 @@ static const MenuItem_t system_info_items[] =
 {
 
     {
-        .text       = "DVM Logger V1.0",
-        .type       = MENU_ITEM_ACTION,
-        .child_page = MENU_INVALID_PAGE,
-        .action     = Action_SystemInfo
+    	    .text       = "DVM Logger V1.0",
+    	    .type       = MENU_ITEM_ACTION,
+    	    .child_page = MENU_INVALID_PAGE,
+    	    .action     = 0
     }
 
 };
@@ -988,15 +986,3 @@ static void Action_RestoreDefault(void)
 }
 
 
-
-
-static void Action_SystemInfo(void)
-{
-
-    /*
-     * TODO:
-     *
-     * Display firmware and hardware information.
-     */
-
-}

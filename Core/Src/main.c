@@ -45,7 +45,6 @@
 #include "buzzer.h"
 #include "buttons.h"
 
-
 #include "menu_items.h"
 #include "menu_controller.h"
 #include "menu_renderer.h"
@@ -141,7 +140,6 @@ int main(void)
 
   /*
    * Startup delay.
-   *
    * Gives LCD module time to stabilize.
    */
 
@@ -162,8 +160,6 @@ int main(void)
   Buzzer_Init();
 
   Buttons_Init();
-
-
 
   MenuRenderer_Update();
 
@@ -189,7 +185,6 @@ int main(void)
 
 
 
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -202,7 +197,7 @@ int main(void)
         Buzzer_Task();
 
         Buttons_Task();
-        HAL_Delay(5);   //for test deboaunce ------------- bi asar bood hazf kon
+        //HAL_Delay(5);   //for test deboaunce ------------- bi asar bood hazf kon
 
 
 
