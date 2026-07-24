@@ -86,9 +86,8 @@
  ******************************************************************************/
 
 #include "menu_renderer.h"
-
 #include "menu_controller.h"
-
+#include "menu_edit.h"
 #include <stddef.h>
 
 
@@ -180,6 +179,13 @@ static void MenuRenderer_ClearBuffer(void)
      * Remove previous page title.
      */
     render_data.title = NULL;
+
+
+    render_data.mode = MENU_RENDER_MODE_MENU;
+
+    render_data.edit_title = NULL;
+
+    render_data.edit_value = 0;
 
 
 
@@ -374,6 +380,55 @@ void MenuRenderer_Update(void)
      * Remove previous rendering information.
      */
     MenuRenderer_ClearBuffer();
+
+
+
+
+
+
+    /*
+     * Check if parameter edit mode is active.
+     */
+    if(MenuEdit_IsActive())
+    {
+
+        render_data.mode = MENU_RENDER_MODE_EDIT;
+
+        render_data.edit_value =
+                MenuEdit_GetValue();
+
+
+        switch(MenuEdit_GetTarget())
+        {
+
+            case EDIT_BAUD_RATE:
+
+                render_data.edit_title =
+                        "Edit Baud Rate";
+
+                break;
+
+
+            case EDIT_SAMPLE_RATE:
+
+                render_data.edit_title =
+                        "Edit Sample Rate";
+
+                break;
+
+
+            default:
+
+                render_data.edit_title =
+                        "Edit Value";
+
+                break;
+
+        }
+
+
+        return;
+    }
 
 
 

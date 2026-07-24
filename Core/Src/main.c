@@ -44,11 +44,13 @@
 #include "lcd_display.h"
 #include "buzzer.h"
 #include "buttons.h"
-
+#include "menu_renderer.h"
 #include "menu_items.h"
 #include "menu_controller.h"
 #include "menu_renderer.h"
-
+#include "menu_edit.h"
+#include "screen_manager.h"
+#include "menu_actions.h"
 
 
 
@@ -151,19 +153,21 @@ int main(void)
 
   LCD_Display_Init(&hi2c1);
 
-
-
   MenuController_Init();
 
   MenuRenderer_Init();
+
+  ScreenManager_Init();
 
   Buzzer_Init();
 
   Buttons_Init();
 
-  MenuRenderer_Update();
+  ScreenManager_Render();
 
-  LCD_Display_RenderMenu();
+//  MenuRenderer_Update();
+//
+//  LCD_Display_RenderMenu();
 
   //ADC_App_Init();
 
@@ -202,7 +206,7 @@ int main(void)
 
 
 
-//----------------------------------------- Button Test @ Line 4 -  Begin--------------------------------------
+//----------------------------------------- Button Test  Begin--------------------------------------
 
 
         Button_Event_t event;
@@ -215,35 +219,68 @@ int main(void)
             {
 
 
-                case BUTTON_ID_UP:
+            case BUTTON_ID_UP:
 
+
+                if(MenuEdit_IsActive())
+                {
+                    MenuEdit_Increment();
+                }
+                else
+                {
                     MenuController_MoveUp();
-
-                    break;
-
+                }
 
 
-                case BUTTON_ID_DOWN:
+                break;
 
+
+
+            case BUTTON_ID_DOWN:
+
+
+                if(MenuEdit_IsActive())
+                {
+                    MenuEdit_Decrement();
+                }
+                else
+                {
                     MenuController_MoveDown();
-
-                    break;
-
+                }
 
 
-                case BUTTON_ID_ENTER:
+                break;
 
+
+
+            case BUTTON_ID_ENTER:
+
+                if(MenuEdit_IsActive())
+                {
+                    MenuEdit_Confirm();
+                }
+                else
+                {
                     MenuController_Enter();
+                }
 
-                    break;
+                break;
 
 
 
-                case BUTTON_ID_BACK:
+            case BUTTON_ID_BACK:
 
+                if(MenuEdit_IsActive())
+                {
+                    MenuEdit_Cancel();
+                }
+                else
+                {
                     MenuController_Back();
+                }
 
-                    break;
+                break;
+
 
 
 
@@ -254,15 +291,14 @@ int main(void)
             }
 
 
-            MenuRenderer_Update();
 
-            LCD_Display_RenderMenu();
+            ScreenManager_Render();
 
         }
 
 
 
-//-----------------------------------------Button Test @ Line 4 -  End------------------------------------
+//-----------------------------------------Button Test  End------------------------------------
 
     }
 

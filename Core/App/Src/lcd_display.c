@@ -54,7 +54,7 @@
 
 #include "menu_renderer.h"
 
-
+#include <stdio.h>
 
 /*
  * --------------------------------------------------------------------------
@@ -413,6 +413,91 @@ void LCD_Display_RenderMenu(void)
     {
         return;
     }
+
+
+
+
+
+    /*
+     * Check parameter edit mode.
+     */
+
+    if(menu->mode == MENU_RENDER_MODE_EDIT)
+    {
+
+        char value_line[21];
+
+
+        /*
+         * Update edit screen without LCD clear.
+         *
+         * Only affected rows are rewritten.
+         * This avoids flicker.
+         */
+
+
+        /*
+         * Row 0:
+         * Edit title
+         */
+        LCD_Display_ShowTitle(
+                menu->edit_title);
+
+
+
+        /*
+         * Prepare value text.
+         */
+        snprintf(
+                value_line,
+                sizeof(value_line),
+                "Value: %ld",
+                menu->edit_value);
+
+
+
+        /*
+         * Row 1:
+         * Current value
+         */
+        LCD_Display_PrintLine(
+                1U,
+                value_line);
+
+
+
+        /*
+         * Clear unused rows.
+         *
+         * Prevent old menu text remaining.
+         */
+        LCD_Display_PrintLine(
+                2U,
+                "                    ");
+
+
+
+        /*
+         * Show edit controls.
+         *
+         * UP    : Increase value
+         * DOWN  : Decrease value
+         * ENTER : Confirm value
+         */
+        LCD_Display_PrintLine(
+                3U,
+                "+  -       Enter=Set");
+
+
+
+        return;
+
+    }
+
+
+
+
+
 
 
 

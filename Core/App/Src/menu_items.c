@@ -28,6 +28,7 @@
  ******************************************************************************/
 
 #include "menu_items.h"
+#include "menu_actions.h"
 #include "menu_edit.h"
 
 
@@ -780,13 +781,7 @@ const MenuPage_t *MenuItems_GetPage(MenuPageId_t page_id)
 
 static void Action_LiveMonitor(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Open live voltage monitor screen.
-     */
-
+    MenuAction_LiveMonitor();
 }
 
 
@@ -794,13 +789,7 @@ static void Action_LiveMonitor(void)
 
 static void Action_StartStream(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Start UART data streaming.
-     */
-
+    MenuAction_StartStream();
 }
 
 
@@ -808,10 +797,7 @@ static void Action_StartStream(void)
 
 static void Action_BaudRate(void)
 {
-    /*
-     * Enter Edit Mode.
-     */
-    MenuEdit_Enter();
+    MenuAction_BaudRate();
 }
 
 
@@ -819,13 +805,7 @@ static void Action_BaudRate(void)
 
 static void Action_SampleRate(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Open sample rate configuration.
-     */
-
+    MenuAction_SampleRate();
 }
 
 

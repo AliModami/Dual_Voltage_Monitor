@@ -58,6 +58,27 @@ extern "C" {
 
 
 
+
+/*
+ * Renderer display mode.
+ *
+ * NORMAL:
+ *      Standard page based menu display.
+ *
+ * EDIT:
+ *      Parameter editing display.
+ */
+typedef enum
+{
+    MENU_RENDER_MODE_MENU = 0,
+
+    MENU_RENDER_MODE_EDIT
+
+} MenuRenderMode_t;
+
+
+
+
 /*
  * Renderer output structure.
  *
@@ -72,6 +93,23 @@ typedef struct
      */
     const char *title;
 
+
+    /*
+     * Current renderer mode.
+     */
+    MenuRenderMode_t mode;
+
+
+    /*
+     * Edit screen title.
+     */
+    const char *edit_title;
+
+
+    /*
+     * Current editing value.
+     */
+    int32_t edit_value;
 
 
     /*

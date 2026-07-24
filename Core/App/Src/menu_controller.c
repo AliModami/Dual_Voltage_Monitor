@@ -14,26 +14,27 @@
  *
  * Description:
  *
- *      This file implements the runtime logic of the Page Based Menu Engine.
+ *      Runtime controller for page based menu system.
  *
  *      Responsibilities:
  *
  *      - Manage current page.
- *      - Manage selected item.
- *      - Handle cursor movement.
- *      - Handle page navigation.
- *      - Handle ENTER and BACK operations.
+ *      - Manage cursor position.
+ *      - Handle UP / DOWN navigation.
+ *      - Handle ENTER operation.
+ *      - Handle BACK operation.
  *
- *      This module has no dependency on:
+ *      Design rules:
  *
- *      - LCD driver
- *      - Button driver
- *      - Hardware layer
+ *      - No LCD dependency.
+ *      - No button dependency.
+ *      - No hardware dependency.
  *
  ******************************************************************************/
 
 #include "menu_controller.h"
 #include "menu_edit.h"
+
 
 
 /*
@@ -44,15 +45,16 @@
 
 
 /*
- * Current runtime state of menu controller.
+ * Runtime menu state.
  */
 static MenuControllerState_t menu_state;
 
+
 /*
- * Remember last selected item
- * for every menu page.
+ * Cursor memory for each page.
  */
 static uint8_t page_cursor[MENU_PAGE_COUNT];
+
 
 
 /*
@@ -63,30 +65,7 @@ static uint8_t page_cursor[MENU_PAGE_COUNT];
 
 
 /*
- * Reset cursor position after changing page.
- *
- * Rule:
- *
- * Every new page starts with first item selected.
- */
-static void MenuController_ResetCursor(void)
-{
-    menu_state.selected_item = 0U;
-}
-
-
-
-
-/*
- * Get current page safely.
- *
- * Returns:
- *
- *      Valid page pointer
- *
- * or:
- *
- *      NULL pointer
+ * Return current page pointer.
  */
 static const MenuPage_t *MenuController_GetPage(void)
 {
@@ -97,10 +76,18 @@ static const MenuPage_t *MenuController_GetPage(void)
 
 
 /*
- * Validate selected cursor position.
- *
- * If current selection is outside
- * page item range, reset it.
+ * Reset cursor position.
+ */
+static void MenuController_ResetCursor(void)
+{
+    menu_state.selected_item = 0U;
+}
+
+
+
+
+/*
+ * Validate cursor position.
  */
 static void MenuController_ValidateCursor(void)
 {
@@ -110,18 +97,51 @@ static void MenuController_ValidateCursor(void)
     page = MenuController_GetPage();
 
 
-    if (page == 0)
+    if(page == 0)
     {
         menu_state.selected_item = 0U;
         return;
     }
 
 
-
-    if (menu_state.selected_item >= page->item_count)
+    if(menu_state.selected_item >= page->item_count)
     {
         menu_state.selected_item = 0U;
     }
+
+}
+
+
+
+
+/*
+ * Save cursor of current page.
+ */
+static void MenuController_SaveCursor(void)
+{
+    if(menu_state.current_page < MENU_PAGE_COUNT)
+    {
+        page_cursor[menu_state.current_page] =
+                menu_state.selected_item;
+    }
+}
+
+
+
+
+/*
+ * Restore cursor of current page.
+ */
+static void MenuController_RestoreCursor(void)
+{
+    if(menu_state.current_page < MENU_PAGE_COUNT)
+    {
+        menu_state.selected_item =
+                page_cursor[menu_state.current_page];
+    }
+
+
+    MenuController_ValidateCursor();
 }
 
 
@@ -134,26 +154,22 @@ static void MenuController_ValidateCursor(void)
  */
 
 
-
 /*
- * Initialize menu controller.
- *
- * Initial state:
- *
- *      Page:
- *          MAIN MENU PAGE 0
- *
- *      Cursor:
- *          First item
+ * Initialize controller.
  */
 void MenuController_Init(void)
 {
 
-    menu_state.current_page = MENU_PAGE_MAIN_0;
+    menu_state.current_page =
+            MENU_PAGE_MAIN_0;
 
 
     menu_state.selected_item = 0U;
-    for (uint8_t i = 0; i < MENU_PAGE_COUNT; i++)
+
+
+    for(uint8_t i = 0U;
+        i < MENU_PAGE_COUNT;
+        i++)
     {
         page_cursor[i] = 0U;
     }
@@ -162,32 +178,15 @@ void MenuController_Init(void)
 
 
 
-
 /*
- * Move cursor upward.
- *
- * Rules:
- *
- * - Cursor decreases.
- * - No wrap-around.
- * - Stops at first item.
+ * ============================================================================
+ * Cursor Navigation
+ * ============================================================================
  */
 
 
-
 /*
- * Move cursor upward.
- *
- * Rules:
- *
- * - Cursor decreases.
- * - No wrap-around inside page.
- * - If cursor is already on first item
- *   and previous page exists:
- *
- *       Move to previous page
- *       Select last item
- *
+ * Move cursor up.
  */
 void MenuController_MoveUp(void)
 {
@@ -197,11 +196,10 @@ void MenuController_MoveUp(void)
     page = MenuController_GetPage();
 
 
-    if (page == 0)
+    if(page == 0)
     {
         return;
     }
-
 
 
     MenuController_ValidateCursor();
@@ -209,13 +207,13 @@ void MenuController_MoveUp(void)
 
 
     /*
-     * Normal cursor movement.
+     * Move inside current page.
      */
-    if (menu_state.selected_item > 0U)
+    if(menu_state.selected_item > 0U)
     {
         menu_state.selected_item--;
-        page_cursor[menu_state.current_page] =
-                menu_state.selected_item;
+
+        MenuController_SaveCursor();
 
         return;
     }
@@ -223,12 +221,14 @@ void MenuController_MoveUp(void)
 
 
     /*
-     * Cursor is already at first item.
-     *
-     * Check previous page.
+     * Page transition is allowed only
+     * when previous page exists.
      */
-    if (page->previous_page != MENU_INVALID_PAGE)
+    if(page->previous_page != MENU_INVALID_PAGE)
     {
+
+        MenuController_SaveCursor();
+
 
         menu_state.current_page =
                 page->previous_page;
@@ -237,58 +237,33 @@ void MenuController_MoveUp(void)
         page = MenuController_GetPage();
 
 
-
-        if (page != 0)
+        if(page != 0)
         {
-
-            /*
-             * Select last item
-             * of previous page.
-             */
             menu_state.selected_item =
                     page->item_count - 1U;
 
-        }
-        else
-        {
-
-            menu_state.selected_item = 0U;
-
+            MenuController_SaveCursor();
         }
 
     }
 
 }
 
-
-
-
 /*
- * Move cursor downward.
+ * ============================================================================
+ * Move cursor down.
+ * ============================================================================
  *
- * Rules:
+ * Behavior:
  *
- * - Cursor increases.
- * - No wrap-around.
- * - Stops at last item.
+ * - Move inside current page.
+ * - If current page has next logical page:
+ *      move to next page only when
+ *      cursor is already on last item.
+ *
+ * ============================================================================
  */
 
-
-
-/*
- * Move cursor downward.
- *
- * Rules:
- *
- * - Cursor increases.
- * - No wrap-around inside page.
- * - If cursor reaches last item
- *   and next page exists:
- *
- *       Move to next page
- *       Select first item
- *
- */
 void MenuController_MoveDown(void)
 {
     const MenuPage_t *page;
@@ -297,11 +272,10 @@ void MenuController_MoveDown(void)
     page = MenuController_GetPage();
 
 
-    if (page == 0)
+    if(page == 0)
     {
         return;
     }
-
 
 
     MenuController_ValidateCursor();
@@ -309,64 +283,65 @@ void MenuController_MoveDown(void)
 
 
     /*
-     * Normal cursor movement.
+     * Normal movement inside current page.
      */
-    if (menu_state.selected_item <
-        (page->item_count - 1U))
+    if(menu_state.selected_item <
+       (page->item_count - 1U))
     {
 
         menu_state.selected_item++;
-        page_cursor[menu_state.current_page] =
-                menu_state.selected_item;
+
+        MenuController_SaveCursor();
+
         return;
 
     }
 
 
 
+
     /*
      * Cursor is already on last item.
      *
-     * Check next page.
+     * Move to next page only if
+     * current page belongs to a page chain.
+     *
      */
-    if (page->next_page != MENU_INVALID_PAGE)
+    if(page->next_page != MENU_INVALID_PAGE)
     {
+
+        MenuController_SaveCursor();
+
+
 
         menu_state.current_page =
                 page->next_page;
 
 
+
         MenuController_ResetCursor();
+
+
+
+        MenuController_SaveCursor();
 
     }
 
 }
 
+
+
 /*
  * ============================================================================
  * Page Navigation
- * ============================================================================
- *
- * Page navigation is used only for logical pages.
- *
- * Example:
- *
- * MAIN PAGE 0
- *       |
- *       v
- * MAIN PAGE 1
- *       |
- *       v
- * MAIN PAGE 2
- *
- * Cursor resets after changing page.
- *
  * ============================================================================
  */
 
 
 /*
- * Move to next page.
+ * Move to next page manually.
+ *
+ * Used for logical page chains.
  */
 void MenuController_NextPage(void)
 {
@@ -377,20 +352,30 @@ void MenuController_NextPage(void)
 
 
 
-    if (page == 0)
+    if(page == 0)
     {
         return;
     }
 
 
 
-    if (page->next_page != MENU_INVALID_PAGE)
+    if(page->next_page != MENU_INVALID_PAGE)
     {
 
-        menu_state.current_page = page->next_page;
+        MenuController_SaveCursor();
+
+
+
+        menu_state.current_page =
+                page->next_page;
+
 
 
         MenuController_ResetCursor();
+
+
+
+        MenuController_SaveCursor();
 
     }
 
@@ -400,7 +385,7 @@ void MenuController_NextPage(void)
 
 
 /*
- * Move to previous page.
+ * Move to previous page manually.
  */
 void MenuController_PreviousPage(void)
 {
@@ -411,20 +396,26 @@ void MenuController_PreviousPage(void)
 
 
 
-    if (page == 0)
+    if(page == 0)
     {
         return;
     }
 
 
 
-    if (page->previous_page != MENU_INVALID_PAGE)
+    if(page->previous_page != MENU_INVALID_PAGE)
     {
 
-        menu_state.current_page = page->previous_page;
+        MenuController_SaveCursor();
 
 
-        MenuController_ResetCursor();
+
+        menu_state.current_page =
+                page->previous_page;
+
+
+
+        MenuController_RestoreCursor();
 
     }
 
@@ -438,16 +429,13 @@ void MenuController_PreviousPage(void)
  * ENTER Operation
  * ============================================================================
  *
- * Behavior:
+ * Priority:
  *
- * MENU_ITEM_SUBMENU:
+ * 1- Edit mode confirmation.
  *
- *      Open child page
+ * 2- Open submenu.
  *
- *
- * MENU_ITEM_ACTION:
- *
- *      Execute callback
+ * 3- Execute action callback.
  *
  * ============================================================================
  */
@@ -455,14 +443,31 @@ void MenuController_PreviousPage(void)
 
 void MenuController_Enter(void)
 {
+
     const MenuItem_t *item;
+
+
+
+    /*
+     * Editing has priority.
+     */
+    if(MenuEdit_IsActive())
+    {
+
+        MenuEdit_Confirm();
+
+        return;
+
+    }
+
+
 
 
     item = MenuController_GetSelectedItem();
 
 
 
-    if (item == 0)
+    if(item == 0)
     {
         return;
     }
@@ -471,44 +476,55 @@ void MenuController_Enter(void)
 
 
     /*
-     * Open submenu page.
+     * Open child page.
      */
-    if (item->type == MENU_ITEM_SUBMENU)
+    if(item->type == MENU_ITEM_SUBMENU)
     {
 
-        if (item->child_page != MENU_INVALID_PAGE)
+        if(item->child_page != MENU_INVALID_PAGE)
         {
 
-        	page_cursor[menu_state.current_page] =
-        	        menu_state.selected_item;
+            /*
+             * Store parent cursor.
+             */
+            MenuController_SaveCursor();
 
-        	menu_state.current_page =
-        	        item->child_page;
 
-        	menu_state.selected_item =
-        	        page_cursor[menu_state.current_page];
+
+            /*
+             * Enter child page.
+             */
+            menu_state.current_page =
+                    item->child_page;
+
+
+
+            /*
+             * Restore child cursor.
+             */
+            MenuController_RestoreCursor();
 
         }
 
 
         return;
+
     }
 
 
 
 
     /*
-     * Execute action callback.
+     * Execute action.
      */
-    if (item->action != 0)
+    if(item->action != 0)
     {
+
         item->action();
+
     }
 
 }
-
-
-
 
 /*
  * ============================================================================
@@ -517,19 +533,16 @@ void MenuController_Enter(void)
  *
  * Behavior:
  *
- * - Return to parent page.
- * - Reset cursor.
+ * Edit Mode:
  *
- * Example:
+ *      Cancel current editing.
  *
- * Alarm Settings Page 1
  *
- *          BACK
+ * Normal Mode:
  *
- *          |
- *          v
+ *      Return to parent page.
  *
- * Alarm Settings Page 0
+ *      Restore previous cursor position.
  *
  * ============================================================================
  */
@@ -537,14 +550,31 @@ void MenuController_Enter(void)
 
 void MenuController_Back(void)
 {
+
     const MenuPage_t *page;
+
+
+
+    /*
+     * If value editing is active,
+     * BACK cancels editing only.
+     */
+    if(MenuEdit_IsActive())
+    {
+
+        MenuEdit_Cancel();
+
+        return;
+
+    }
+
 
 
     page = MenuController_GetPage();
 
 
 
-    if (page == 0)
+    if(page == 0)
     {
         return;
     }
@@ -555,34 +585,51 @@ void MenuController_Back(void)
     /*
      * Root page has no parent.
      */
-    if (page->parent_page == MENU_INVALID_PAGE)
+    if(page->parent_page == MENU_INVALID_PAGE)
     {
         return;
     }
 
 
 
+
+    /*
+     * Save current page cursor.
+     */
+    MenuController_SaveCursor();
+
+
+
+
+    /*
+     * Move to parent page.
+     */
     menu_state.current_page =
             page->parent_page;
 
-    menu_state.selected_item =
-            page_cursor[menu_state.current_page];
+
+
+
+    /*
+     * Restore parent cursor.
+     */
+    MenuController_RestoreCursor();
 
 }
+
+
 
 /*
  * ============================================================================
  * Getter Functions
  * ============================================================================
  *
- * These functions provide read-only access to the current
- * menu state for external modules.
+ * These functions provide read-only access
+ * to controller state.
  *
  * Used by:
  *
  *      menu_renderer.c
- *
- * The renderer does not modify menu state.
  *
  * ============================================================================
  */
@@ -590,13 +637,7 @@ void MenuController_Back(void)
 
 
 /*
- * Get current page information.
- *
- * Returns:
- *
- *      Pointer to current MenuPage_t
- *
- *      NULL if page is invalid.
+ * Return current page information.
  */
 const MenuPage_t *MenuController_GetCurrentPage(void)
 {
@@ -609,9 +650,7 @@ const MenuPage_t *MenuController_GetCurrentPage(void)
 
 
 /*
- * Get current selected item index.
- *
- * Used by renderer to draw cursor.
+ * Return selected item index.
  */
 uint8_t MenuController_GetSelectedIndex(void)
 {
@@ -624,24 +663,20 @@ uint8_t MenuController_GetSelectedIndex(void)
 
 
 /*
- * Get selected menu item.
- *
- * Returns:
- *
- *      Pointer to selected MenuItem_t
- *
- *      NULL if selection is invalid.
+ * Return selected item information.
  */
 const MenuItem_t *MenuController_GetSelectedItem(void)
 {
+
     const MenuPage_t *page;
+
 
 
     page = MenuController_GetPage();
 
 
 
-    if (page == 0)
+    if(page == 0)
     {
         return 0;
     }
@@ -649,13 +684,12 @@ const MenuItem_t *MenuController_GetSelectedItem(void)
 
 
 
-    /*
-     * Safety check.
-     */
-    if (menu_state.selected_item >= page->item_count)
+    if(menu_state.selected_item >=
+       page->item_count)
     {
         return 0;
     }
+
 
 
 
@@ -667,7 +701,7 @@ const MenuItem_t *MenuController_GetSelectedItem(void)
 
 
 /*
- * Get current page identifier.
+ * Return current page identifier.
  */
 MenuPageId_t MenuController_GetCurrentPageId(void)
 {
@@ -677,6 +711,94 @@ MenuPageId_t MenuController_GetCurrentPageId(void)
 }
 
 
+/*
+ * ============================================================================
+ * End Of File Notes
+ * ============================================================================
+ *
+ * This version implements:
+ *
+ * - Page based navigation.
+ * - Cursor memory for every page.
+ * - Three visible items per page support.
+ * - ENTER submenu handling.
+ * - BACK parent navigation.
+ * - Edit mode priority.
+ * - No LCD dependency.
+ * - No button dependency.
+ *
+ *
+ * Navigation Example:
+ *
+ *
+ * MAIN MENU PAGE 0
+ *
+ *   Live Monitor
+ *   Start Stream
+ *   Stream Settings
+ *
+ *
+ *              DOWN
+ *
+ *
+ * MAIN MENU PAGE 1
+ *
+ *   Alarm Settings
+ *   Calibration
+ *   Service Mode
+ *
+ *
+ *
+ * BACK Example:
+ *
+ *
+ * Stream Settings
+ *
+ *        BACK
+ *
+ *          |
+ *          v
+ *
+ * Main Menu Page 0
+ *
+ *
+ *
+ * Edit Example:
+ *
+ *
+ * Baud Rate
+ *
+ *        ENTER
+ *
+ *          |
+ *          v
+ *
+ * Edit Mode Active
+ *
+ *
+ *        BACK
+ *
+ *          |
+ *          v
+ *
+ * Cancel Edit
+ *
+ *
+ *        ENTER
+ *
+ *          |
+ *          v
+ *
+ * Confirm Value
+ *
+ *
+ * ============================================================================
+ */
+
+
+/*
+ * No additional code required.
+ */
 
 
 /*
