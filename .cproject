@@ -77,8 +77,8 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="App/Src/lcd_display_old.c|App/Src/menu_engine.c|App/Src/menu_renderer_old.c|App/Src/menu_items1.c|App/Src/menu_engine_old.c|App/Src/menu_items_old.c|App/Src/buttons2.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry excluding="OLD_UnUsed/menu_engine_old.c|OLD_UnUsed/menu_engine.c|OLD_UnUsed/menu_items_ooo.c|OLD_UnUsed/menu_items.c|OLD_UnUsed/menu_items1.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry excluding="App/Src/lcd_display_old.c|App/Src/menu_engine.c|App/Src/menu_renderer_old.c|App/Src/menu_items1.c|App/Src/menu_engine_old.c|App/Src/menu_items_old.c|App/Src/buttons2.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -151,8 +151,8 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="App/Src/lcd_display_old.c|App/Src/menu_engine.c|App/Src/menu_renderer_old.c|App/Src/menu_items1.c|App/Src/menu_engine_old.c|App/Src/menu_items_old.c|App/Src/buttons2.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry excluding="OLD_UnUsed/menu_engine_old.c|OLD_UnUsed/menu_engine.c|OLD_UnUsed/menu_items_ooo.c|OLD_UnUsed/menu_items.c|OLD_UnUsed/menu_items1.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
+						<entry excluding="App/Src/lcd_display_old.c|App/Src/menu_engine.c|App/Src/menu_renderer_old.c|App/Src/menu_items1.c|App/Src/menu_engine_old.c|App/Src/menu_items_old.c|App/Src/buttons2.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>

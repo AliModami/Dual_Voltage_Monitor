@@ -32,8 +32,6 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-//#include <menu_renderer_old.h>
-//#include <lcd_display_old.h>
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -50,7 +48,7 @@
 #include "menu_edit.h"
 #include "screen_manager.h"
 #include "menu_actions.h"
-
+#include "adc_app.h"
 
 
 /* USER CODE END Includes */
@@ -129,11 +127,9 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
-
   /* USER CODE BEGIN 2 */
 
 
@@ -199,10 +195,11 @@ int main(void)
     {
 
 
+        ADC_App_Task();
+        //ScreenManager_Task();
         Buzzer_Task();
-
         Buttons_Task();
-        //HAL_Delay(5);   //for test deboaunce ------------- bi asar bood hazf kon
+
 
 
 
@@ -482,7 +479,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
