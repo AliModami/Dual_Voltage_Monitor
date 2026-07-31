@@ -158,16 +158,6 @@ void LCD_Display_RenderMenu(void);
 
 
 
-/*
- * Get internal LCD handle.
- *
- * Useful for advanced application access.
- *
- */
-//void *LCD_Display_GetHandle(void);
-
-
-
 #ifdef __cplusplus
 }
 #endif

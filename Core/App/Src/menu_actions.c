@@ -22,6 +22,7 @@
  *
  *      - Connect menu selections to application modules.
  *      - Start parameter edit operations.
+ *      - Change application screens.
  *
  *
  *      This module does NOT handle:
@@ -35,7 +36,7 @@
 #include "menu_actions.h"
 
 #include "menu_edit.h"
-
+#include "screen_manager.h"
 
 
 
@@ -48,16 +49,27 @@
 
 /*
  * Open live monitor screen.
+ *
+ * Flow:
+ *
+ *      Menu
+ *        |
+ *        v
+ *      MenuAction_LiveMonitor()
+ *        |
+ *        v
+ *      Screen Manager
+ *
  */
 void MenuAction_LiveMonitor(void)
 {
 
     /*
-     * TODO:
-     *
-     * Connect to Screen Manager.
-     *
+     * Switch application display
+     * to live monitor screen.
      */
+    ScreenManager_SetScreen(
+            SCREEN_LIVE_MONITOR);
 
 }
 
@@ -186,11 +198,6 @@ void MenuAction_AlarmMode(void)
 
 }
 
-
-
-
-
-
 /*
  * ============================================================================
  * Calibration Actions
@@ -201,8 +208,6 @@ void MenuAction_AlarmMode(void)
 /*
  * Input voltage calibration offset.
  */
-
-
 void MenuAction_InputVoltageOffset(void)
 {
 
@@ -218,7 +223,6 @@ void MenuAction_InputVoltageOffset(void)
 /*
  * Output voltage calibration offset.
  */
-
 void MenuAction_OutputVoltageOffset(void)
 {
 
@@ -342,6 +346,16 @@ void MenuAction_RestoreDefault(void)
  *
  *      Version:
  *
- *          v1.0.1
+ *          v1.0.2
+ *
+ *
+ * Changes:
+ *
+ *      v1.0.2
+ *
+ *          - Added Screen Manager dependency.
+ *          - Connected Live Monitor action.
+ *          - Preserved existing edit actions.
+ *          - No menu navigation changes.
  *
  ******************************************************************************/

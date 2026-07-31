@@ -49,7 +49,7 @@
 #include "screen_manager.h"
 #include "menu_actions.h"
 #include "adc_app.h"
-
+#include "config.h"
 
 /* USER CODE END Includes */
 
@@ -148,6 +148,8 @@ int main(void)
 
   LCD_Display_Init(&hi2c1);
 
+  Config_Init();
+
   MenuController_Init();
 
   MenuEdit_Init();
@@ -160,13 +162,10 @@ int main(void)
 
   Buttons_Init();
 
+  ADC_App_Init();
+
   ScreenManager_Render();
 
-//  MenuRenderer_Update();
-//
-//  LCD_Display_RenderMenu();
-
-  //ADC_App_Init();
 
 
 
@@ -191,203 +190,175 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    while (1)
-    {
 
+  static uint32_t last_screen_update = 0U;
 
-        ADC_App_Task();
-        //ScreenManager_Task();
-        Buzzer_Task();
-        Buttons_Task();
 
 
 
+  while (1)
+  {
 
 
-//----------------------------------------- Button Test  Begin--------------------------------------
+      ADC_App_Task();
 
 
-        Button_Event_t event;
 
+      /*
+       * Live monitor requires continuous refresh.
+       */
+      if(ScreenManager_GetScreen() == SCREEN_LIVE_MONITOR)
+      {
+          if((HAL_GetTick() - last_screen_update) >= 200U)
+          {
+              last_screen_update = HAL_GetTick();
 
-        if(Buttons_GetEvent(&event))
-        {
+              ScreenManager_Render();
+          }
+      }
 
-            switch(event.button)
-            {
 
 
-//            case BUTTON_ID_UP:
-//
-//
-//                if(MenuEdit_IsActive())
-//                {
-//                    MenuEdit_Increment();
-//                }
-//                else
-//                {
-//                    MenuController_MoveUp();
-//                }
-//
-//
-//                break;
+      Buttons_Task();
 
+      Buzzer_Task();
 
-            case BUTTON_ID_UP:
 
-                if(MenuEdit_IsActive())
-                {
-                    MenuEdit_Increment();
-                }
-                else
-                {
-                    MenuController_MoveUp();
 
-                    printf("UP Page=%d Index=%d\r\n",
-                           MenuController_GetCurrentPageId(),
-                           MenuController_GetSelectedIndex());
-                }
 
-                break;
+      //----------------------------------------- Button Processing Begin --------------------------------------
 
 
+      Button_Event_t event;
 
 
+      while(Buttons_GetEvent(&event))
+      {
 
+          switch(event.button)
+          {
 
+              case BUTTON_ID_UP:
 
+                  if((event.event == BUTTON_EVENT_PRESS) ||
+                     (event.event == BUTTON_EVENT_REPEAT))
+                  {
 
+                      if(MenuEdit_IsActive())
+                      {
+                          MenuEdit_Increment();
 
+                          ScreenManager_Render();
+                      }
+                      else if(event.event == BUTTON_EVENT_PRESS)
+                      {
+                          MenuController_MoveUp();
 
+                          ScreenManager_Render();
+                      }
 
+                  }
 
+                  break;
 
 
-//            case BUTTON_ID_DOWN:
-//
-//
-//                if(MenuEdit_IsActive())
-//                {
-//                    MenuEdit_Decrement();
-//                }
-//                else
-//                {
-//                    MenuController_MoveDown();
-//                }
-//
-//
-//                break;
 
+              case BUTTON_ID_DOWN:
 
+                  if((event.event == BUTTON_EVENT_PRESS) ||
+                     (event.event == BUTTON_EVENT_REPEAT))
+                  {
 
+                      if(MenuEdit_IsActive())
+                      {
+                          MenuEdit_Decrement();
 
-            case BUTTON_ID_DOWN:
+                          ScreenManager_Render();
+                      }
+                      else if(event.event == BUTTON_EVENT_PRESS)
+                      {
+                          MenuController_MoveDown();
 
-                if(MenuEdit_IsActive())
-                {
-                    MenuEdit_Decrement();
-                }
-                else
-                {
-                    MenuController_MoveDown();
+                          ScreenManager_Render();
+                      }
 
-                    printf("DOWN Page=%d Index=%d\r\n",
-                           MenuController_GetCurrentPageId(),
-                           MenuController_GetSelectedIndex());
-                }
+                  }
 
-                break;
+                  break;
 
 
 
+              case BUTTON_ID_ENTER:
 
+                  if(event.event == BUTTON_EVENT_PRESS)
+                  {
 
+                      if(MenuEdit_IsActive())
+                      {
+                          MenuEdit_Confirm();
+                      }
+                      else
+                      {
+                          MenuController_Enter();
+                      }
 
+                      ScreenManager_Render();
 
+                  }
 
+                  break;
 
 
 
+              case BUTTON_ID_BACK:
 
-//            case BUTTON_ID_ENTER:
-//
-//                if(MenuEdit_IsActive())
-//                {
-//                    MenuEdit_Confirm();
-//                }
-//                else
-//                {
-//                    MenuController_Enter();
-//                }
-//
-//                break;
+                  if(event.event == BUTTON_EVENT_PRESS)
+                  {
 
+                      if(MenuEdit_IsActive())
+                      {
+                          MenuEdit_Cancel();
+                      }
+                      else
+                      {
 
+                          if(ScreenManager_GetScreen() != SCREEN_MENU)
+                          {
+                              ScreenManager_SetScreen(SCREEN_MENU);
+                          }
+                          else
+                          {
+                              MenuController_Back();
+                          }
 
-            case BUTTON_ID_ENTER:
+                      }
 
-                if(MenuEdit_IsActive())
-                {
-                    MenuEdit_Confirm();
-                }
-                else
-                {
-                    const MenuItem_t *item;
+                      ScreenManager_Render();
 
-                    item = MenuController_GetSelectedItem();
+                  }
 
-                    if(item != 0)
-                    {
-                        printf("ENTER: Page=%d Index=%d Type=%d Child=%d Text=%s\r\n",
-                               MenuController_GetCurrentPageId(),
-                               MenuController_GetSelectedIndex(),
-                               item->type,
-                               item->child_page,
-                               item->text);
-                    }
+                  break;
 
-                    MenuController_Enter();
-                }
 
-                break;
 
+              default:
 
+                  break;
 
+          }
 
+      }
 
-            case BUTTON_ID_BACK:
 
-                if(MenuEdit_IsActive())
-                {
-                    MenuEdit_Cancel();
-                }
-                else
-                {
-                    MenuController_Back();
-                }
+      //----------------------------------------- Button Processing End --------------------------------------
 
-                break;
 
 
 
 
-                default:
+  }
 
-                    break;
 
-            }
-
-
-
-            ScreenManager_Render();
-
-        }
-
-
-
-//-----------------------------------------Button Test  End------------------------------------
-
-    }
 
 
     /* USER CODE END WHILE */
@@ -484,6 +455,12 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
+
+
+  HAL_ADCEx_Calibration_Start(&hadc1);
+
+
+
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */

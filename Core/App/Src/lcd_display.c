@@ -14,118 +14,100 @@
  *
  * Description:
  *
- *      This module provides the application display interface.
- *
- *      It connects:
- *
- *
- *          Menu Renderer
- *                |
- *                v
- *
- *          LCD Display Layer
- *                |
- *                v
- *
- *          LCD I2C Driver
- *
- *
+ *      This module provides the application display abstraction layer.
  *
  *      Responsibilities:
  *
- *      - Initialize display system.
- *      - Display title lines.
- *      - Display text lines.
+ *      - Initialize LCD display layer.
+ *      - Display application text.
  *      - Render page based menu.
+ *      - Render parameter edit screen.
  *
  *
- *      This module does not handle:
+ *      This module does NOT handle:
  *
- *      - Button processing
- *      - Menu navigation
- *      - Application logic
+ *      - Button input.
+ *      - Menu navigation.
+ *      - Menu logic.
+ *      - I2C communication.
+ *      - HD44780 low level commands.
+ *
+ *
+ * Architecture:
+ *
+ *
+ *      menu_controller
+ *             |
+ *             v
+ *
+ *      menu_renderer
+ *             |
+ *             v
+ *
+ *      lcd_display
+ *             |
+ *             v
+ *
+ *      lcd_i2c
  *
  *
  ******************************************************************************/
 
 #include "lcd_display.h"
+
 #include "lcd_i2c.h"
 #include "menu_renderer.h"
 #include "menu_edit.h"
-#include <stdio.h>
+
+#include <string.h>
+
 
 /*
- * --------------------------------------------------------------------------
- * Private definitions
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * Private Definitions
+ * ============================================================================
  */
 
 
 /*
- * LCD cursor symbol.
- *
- * Character LCD does not support
- * Unicode arrows by default.
- *
- * Therefore simple ASCII cursor
- * is used.
+ * Cursor character used for selected menu item.
  */
-#define LCD_MENU_CURSOR_CHAR       '>'
-
+#define LCD_MENU_CURSOR_CHAR     '>'
 
 
 
 /*
- * --------------------------------------------------------------------------
- * Private variables
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * Private Variables
+ * ============================================================================
  */
 
 
 /*
- * Display initialization status.
+ * LCD initialization state.
  *
  * 0:
- *      LCD not ready
+ *      Not initialized
  *
  * 1:
- *      LCD initialized
+ *      Ready
  */
 static uint8_t lcd_display_initialized = 0U;
 
-
-
+static char lcd_line_cache[LCD_DEFAULT_ROWS][LCD_DEFAULT_COLUMNS + 1];
 
 /*
- * --------------------------------------------------------------------------
- * Private helper functions
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * Private Function Prototypes
+ * ============================================================================
  */
 
 
 /*
- * Write one complete LCD row.
+ * Write complete LCD row.
  *
- * Character LCD keeps old characters
- * if the new text is shorter.
- *
- * Example:
- *
- * Previous:
- *
- *      Live Monitor
- *
- * New:
- *
- *      OK
- *
- * Without clearing:
- *
- *      OKve Monitor
- *
- * Therefore unused characters
- * are replaced with spaces.
- *
+ * Remaining characters are filled
+ * with spaces to remove old content.
  */
 static void LCD_Display_WriteRow(
         uint8_t row,
@@ -134,36 +116,19 @@ static void LCD_Display_WriteRow(
 
 
 /*
- * --------------------------------------------------------------------------
+ * ============================================================================
  * Public Functions
- * --------------------------------------------------------------------------
+ * ============================================================================
  */
 
 
 /*
- * Initialize display abstraction layer.
- *
- * Example:
- *
- *      LCD_Display_Init(&hi2c1);
- *
+ * Initialize LCD display layer.
  */
 void LCD_Display_Init(
         I2C_HandleTypeDef *hi2c)
 {
 
-    /*
-     * Initialize low level LCD driver.
-     *
-     * Default:
-     *
-     *      Address : 0x27
-     *
-     *      Size:
-     *
-     *          20 columns
-     *          4 rows
-     */
     if(LCD_Init(
             hi2c,
             LCD_I2C_ADDRESS_DEFAULT,
@@ -174,15 +139,16 @@ void LCD_Display_Init(
         lcd_display_initialized = 1U;
 
 
-        /*
-         * Clear startup garbage.
-         */
         LCD_Clear();
 
+        memset(lcd_line_cache,
+               0,
+               sizeof(lcd_line_cache));
+
+
 
         /*
-         * Allow HD44780 controller
-         * to complete clear command.
+         * HD44780 clear command delay.
          */
         HAL_Delay(5U);
 
@@ -197,25 +163,31 @@ void LCD_Display_Init(
 }
 
 
+
+
 /*
  * Write one complete LCD row.
- *
- * This function belongs to display layer.
- *
- * It prevents display artifacts caused by
- * old characters remaining on LCD.
- *
  */
 static void LCD_Display_WriteRow(
         uint8_t row,
         const char *text)
 {
 
-    uint8_t column = 0U;
+    char new_line[LCD_DEFAULT_COLUMNS + 1];
+
+
+    uint8_t index = 0U;
 
 
 
-    if(text == 0)
+    if(text == NULL)
+    {
+        return;
+    }
+
+
+
+    if(row >= LCD_DEFAULT_ROWS)
     {
         return;
     }
@@ -223,58 +195,68 @@ static void LCD_Display_WriteRow(
 
 
     /*
-     * Move cursor to beginning of row.
+     * Create fixed length LCD line.
      */
+    while((text[index] != '\0') &&
+          (index < LCD_DEFAULT_COLUMNS))
+    {
+        new_line[index] = text[index];
+
+        index++;
+    }
+
+
+
+    while(index < LCD_DEFAULT_COLUMNS)
+    {
+        new_line[index] = ' ';
+
+        index++;
+    }
+
+
+
+    new_line[LCD_DEFAULT_COLUMNS] = '\0';
+
+
+
+    /*
+     * Skip identical update.
+     */
+    if(strcmp(lcd_line_cache[row],
+              new_line) == 0)
+    {
+        return;
+    }
+
+
+
+    strcpy(lcd_line_cache[row],
+           new_line);
+
+
+
     LCD_SetCursor(
             0U,
             row);
 
 
 
-    /*
-     * Write text characters.
-     */
-    while((text[column] != '\0') &&
-          (column < LCD_DEFAULT_COLUMNS))
+    for(index = 0U;
+        index < LCD_DEFAULT_COLUMNS;
+        index++)
     {
 
         LCD_PrintChar(
-                text[column]);
-
-        column++;
-
-    }
-
-
-
-    /*
-     * Fill remaining columns with spaces.
-     *
-     * This removes old characters.
-     */
-    while(column < LCD_DEFAULT_COLUMNS)
-    {
-
-        LCD_PrintChar(' ');
-
-        column++;
+                new_line[index]);
 
     }
 
 }
 
 
-
-
 /*
- * Show title line.
- *
- * LCD row 0 is reserved for page title.
- *
- * Example:
- *
- *      LCD_Display_ShowTitle("MAIN MENU");
- *
+ * Display title line.
  */
 void LCD_Display_ShowTitle(
         const char *title)
@@ -297,18 +279,7 @@ void LCD_Display_ShowTitle(
 
 
 /*
- * Print text on selected LCD row.
- *
- * Rows:
- *
- *      0 ... 3
- *
- * Example:
- *
- *      LCD_Display_PrintLine(
- *              1,
- *              "Live Monitor");
- *
+ * Display text on selected row.
  */
 void LCD_Display_PrintLine(
         uint8_t row,
@@ -339,8 +310,7 @@ void LCD_Display_PrintLine(
 
 
 /*
- * Clear complete display.
- *
+ * Clear LCD display.
  */
 void LCD_Display_Clear(void)
 {
@@ -355,38 +325,33 @@ void LCD_Display_Clear(void)
     LCD_Clear();
 
 
-    /*
-     * HD44780 clear command
-     * requires extra execution time.
-     */
     HAL_Delay(5U);
 
 }
 
 
+/*
+ * ============================================================================
+ * Menu Rendering
+ * ============================================================================
+ */
 
 
 /*
- * Render menu screen.
+ * Render complete menu page.
  *
  * Data source:
  *
  *      MenuRenderer_GetData()
  *
  *
- * LCD format:
- *
+ * LCD Layout:
  *
  *      Row 0:
  *          Page title
  *
  *      Row 1-3:
  *          Menu items
- *
- *
- * Cursor:
- *
- *      > Item
  *
  */
 void LCD_Display_RenderMenu(void)
@@ -407,7 +372,7 @@ void LCD_Display_RenderMenu(void)
 
 
 
-    if(menu == 0)
+    if(menu == NULL)
     {
         return;
     }
@@ -415,94 +380,15 @@ void LCD_Display_RenderMenu(void)
 
 
 
-
     /*
-     * Check parameter edit mode.
+     * ------------------------------------------------------------------------
+     * Parameter Edit Screen
+     * ------------------------------------------------------------------------
      */
-
-//    if(menu->mode == MENU_RENDER_MODE_EDIT)
-//    {
-//
-//        char value_line[21];
-//
-//
-//        /*
-//         * Update edit screen without LCD clear.
-//         *
-//         * Only affected rows are rewritten.
-//         * This avoids flicker.
-//         */
-//
-//
-//        /*
-//         * Row 0:
-//         * Edit title
-//         */
-//        LCD_Display_ShowTitle(
-//                menu->edit_title);
-//
-//
-//
-//        /*
-//         * Prepare value text.
-//         */
-//        snprintf(
-//                value_line,
-//                sizeof(value_line),
-//                "Value: %ld",
-//                menu->edit_value);
-//
-//
-//
-//        /*
-//         * Row 1:
-//         * Current value
-//         */
-//        LCD_Display_PrintLine(
-//                1U,
-//                value_line);
-//
-//
-//
-//        /*
-//         * Clear unused rows.
-//         *
-//         * Prevent old menu text remaining.
-//         */
-//        LCD_Display_PrintLine(
-//                2U,
-//                "                    ");
-//
-//
-//
-//        /*
-//         * Show edit controls.
-//         *
-//         * UP    : Increase value
-//         * DOWN  : Decrease value
-//         * ENTER : Confirm value
-//         */
-//        LCD_Display_PrintLine(
-//                3U,
-//                "+  -       Enter=Set");
-//
-//
-//
-//        return;
-//
-//    }
-
-
-
     if(menu->mode == MENU_RENDER_MODE_EDIT)
     {
 
         char value_line[21];
-
-        MenuEditTarget_t target;
-
-
-        target = MenuEdit_GetTarget();
 
 
 
@@ -516,170 +402,15 @@ void LCD_Display_RenderMenu(void)
 
 
         /*
-         * Generate human readable value.
+         * Convert internal value
+         * to display text.
+         *
+         * This avoids float printf
+         * dependency.
          */
-        switch(target)
-        {
-
-
-            case EDIT_BAUD_RATE:
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%ld bps",
-                        menu->edit_value);
-
-                break;
-
-
-
-            case EDIT_SAMPLE_RATE:
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%ld ms",
-                        menu->edit_value);
-
-                break;
-
-
-
-            case EDIT_ALARM_ENABLE:
-
-
-                if(menu->edit_value)
-                {
-                    snprintf(
-                            value_line,
-                            sizeof(value_line),
-                            "ON");
-                }
-                else
-                {
-                    snprintf(
-                            value_line,
-                            sizeof(value_line),
-                            "OFF");
-                }
-
-                break;
-
-
-
-
-            case EDIT_LOW_VOLTAGE_LIMIT:
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%ld V",
-                        menu->edit_value);
-
-                break;
-
-
-
-
-            case EDIT_HIGH_VOLTAGE_LIMIT:
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%ld V",
-                        menu->edit_value);
-
-                break;
-
-
-
-
-            case EDIT_INPUT_VOLTAGE_OFFSET:
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%.1f V",
-                        (float)menu->edit_value / 10.0f);
-
-                break;
-
-
-
-            case EDIT_OUTPUT_VOLTAGE_OFFSET:
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%.1f V",
-                        (float)menu->edit_value / 10.0f);
-
-                break;
-
-
-
-
-
-
-
-
-
-            case EDIT_ALARM_MODE:
-
-
-//                if(menu->edit_value == CONFIG_ALARM_REPEAT)
-//                {
-//                    snprintf(
-//                            value_line,
-//                            sizeof(value_line),
-//                            "REPEAT");
-//                }
-//                else
-//                {
-//                    snprintf(
-//                            value_line,
-//                            sizeof(value_line),
-//                            "ONCE");
-//                }
-
-
-            	if(menu->edit_value != 0)
-            	{
-            	    snprintf(
-            	        value_line,
-            	        sizeof(value_line),
-            	        "Repeat");
-            	}
-            	else
-            	{
-            	    snprintf(
-            	        value_line,
-            	        sizeof(value_line),
-            	        "Once");
-            	}
-
-
-
-
-
-
-                break;
-
-
-
-            default:
-
-
-                snprintf(
-                        value_line,
-                        sizeof(value_line),
-                        "%ld",
-                        menu->edit_value);
-
-                break;
-
-        }
+        MenuEdit_GetDisplayString(
+                value_line,
+                sizeof(value_line));
 
 
 
@@ -695,21 +426,21 @@ void LCD_Display_RenderMenu(void)
 
         /*
          * Row 2:
-         * Empty
+         * Empty line
          */
         LCD_Display_PrintLine(
                 2U,
-                "                    ");
+                "");
 
 
 
         /*
          * Row 3:
-         * Controls
+         * User controls
          */
         LCD_Display_PrintLine(
                 3U,
-                "UP/DN  ENTER=SAVE");
+                "UP/DN ENTER=SAVE");
 
 
 
@@ -720,8 +451,18 @@ void LCD_Display_RenderMenu(void)
 
 
 
+
     /*
-     * Draw page title.
+     * ------------------------------------------------------------------------
+     * Normal Menu Page
+     * ------------------------------------------------------------------------
+     */
+
+
+
+    /*
+     * Row 0:
+     * Page title
      */
     LCD_Display_WriteRow(
             0U,
@@ -729,58 +470,64 @@ void LCD_Display_RenderMenu(void)
 
 
 
+
+
     /*
-     * Draw visible menu items.
+     * Rows 1-3:
+     *
+     * Visible menu items
      */
-    for(uint8_t i = 0U;
-        i < MENU_RENDER_VISIBLE_ITEMS;
-        i++)
+    for(uint8_t row = 0U;
+        row < MENU_RENDER_VISIBLE_ITEMS;
+        row++)
     {
 
         char line[21];
-
 
         uint8_t index = 0U;
 
 
 
         /*
-         * Clear local buffer.
+         * Initialize line buffer.
          */
-        for(uint8_t j = 0U;
-            j < sizeof(line);
-            j++)
+        for(uint8_t i = 0U;
+            i < sizeof(line);
+            i++)
         {
-            line[j] = '\0';
+
+            line[i] = '\0';
+
         }
 
 
+
+
+
         /*
-         * Draw cursor.
-         *
-         * Selected item:
-         *
-         *      > Item
-         *
-         * Non selected item:
-         *
-         *        Item
+         * Add cursor.
          */
-        if(i == menu->cursor_position)
+        if(row == menu->cursor_position)
         {
+
             line[index++] =
                     LCD_MENU_CURSOR_CHAR;
 
-            line[index++] =
-                    ' ';
-        }
-        else
-        {
-            line[index++] =
-                    ' ';
 
             line[index++] =
                     ' ';
+
+        }
+        else
+        {
+
+            line[index++] =
+                    ' ';
+
+
+            line[index++] =
+                    ' ';
+
         }
 
 
@@ -788,34 +535,38 @@ void LCD_Display_RenderMenu(void)
 
 
         /*
-         * Copy item text.
+         * Add menu item text.
          */
-        if(i < menu->item_count)
+        if(row < menu->item_count)
         {
 
-            const char *item =
-                    menu->items[i];
+            const char *item;
 
 
-            if(item != 0)
+            item = menu->items[row];
+
+
+
+            if(item != NULL)
             {
 
+                uint8_t item_index = 0U;
 
-            	uint8_t text_index = 0U;
 
 
-            	while((item[text_index] != '\0') &&
-            	      (index < LCD_DEFAULT_COLUMNS))
-            	{
+                while((item[item_index] != '\0') &&
+                      (index < LCD_DEFAULT_COLUMNS))
+                {
 
-            	    line[index] =
-            	            item[text_index];
+                    line[index] =
+                            item[item_index];
 
-            	    index++;
-            	    text_index++;
 
-            	}
+                    index++;
 
+                    item_index++;
+
+                }
 
             }
 
@@ -823,144 +574,243 @@ void LCD_Display_RenderMenu(void)
 
 
 
+
+
         /*
-         * Write menu row.
+         * Write LCD row.
          *
-         * LCD row:
+         * Menu rows:
          *
          *      1 ... 3
          */
         LCD_Display_WriteRow(
-                i + 1U,
+                row + 1U,
                 line);
 
     }
 
 }
 
-
 /*
- * --------------------------------------------------------------------------
- * Advanced display helper functions
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * Display Utility Functions
+ * ============================================================================
  */
 
 
 /*
- * Return internal LCD handle.
+ * The display layer intentionally keeps
+ * no application state.
  *
- * This function is provided for advanced
- * application access.
+ * All displayed information is received
+ * from:
  *
- * Normal application code should use:
+ *      menu_renderer
+ *
+ * or directly from application modules
+ * through:
  *
  *      LCD_Display_PrintLine()
  *
+ */
+
+
+
+/*
+ * ============================================================================
+ * Internal Design Notes
+ * ============================================================================
+ */
+
+
+/*
+ * LCD_Display_RenderMenu()
+ *
+ * Rendering flow:
+ *
+ *
+ *      menu_renderer
+ *
+ *          |
+ *          v
+ *
+ *      MenuRenderData_t
+ *
+ *          |
+ *          v
+ *
  *      LCD_Display_RenderMenu()
  *
+ *          |
+ *          v
  *
- * Note:
+ *      LCD_Display_WriteRow()
  *
- * Current architecture uses the low level
- * driver internal handle.
+ *          |
+ *          v
  *
- * Therefore this function returns the
- * address of the LCD driver context.
+ *      lcd_i2c driver
  *
+ *
+ *
+ * The display layer never changes
+ * menu state.
  */
-void *LCD_Display_GetHandle(void)
-{
-
-    /*
-     * The current LCD driver implementation
-     * manages its internal context.
-     *
-     * No direct application access is required.
-     */
-    return 0;
-
-}
 
 
 
 /*
- * --------------------------------------------------------------------------
- * Internal validation helpers
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * Flicker Prevention Rules
+ * ============================================================================
  */
 
 
 /*
- * Check display readiness.
+ * This module does not call:
  *
- * Private helper used internally.
+ *      LCD_Clear()
+ *
+ * during normal rendering.
+ *
+ * Only modified rows are rewritten.
+ *
+ * This prevents:
+ *
+ *      - Visible blinking
+ *      - Slow redraw
+ *      - Cursor flicker
+ *
  */
-//static uint8_t LCD_Display_IsReady(void)
-//{
-//
-//    return lcd_display_initialized;
-//
-//}
 
 
 
 /*
- * --------------------------------------------------------------------------
- * End of display abstraction layer
- * --------------------------------------------------------------------------
- */
-
-/*
- * --------------------------------------------------------------------------
- * Display State Interface
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * LCD Layout Rules
+ * ============================================================================
  */
 
 
 /*
- * Check LCD display initialization state.
- *
- * Return:
- *
- *      1 :
- *          Display ready
- *
- *      0 :
- *          Display not initialized
+ * Character LCD 20x4:
  *
  *
- * This function is intentionally kept
- * private because application code should
- * not depend on internal display state.
+ * +--------------------+
+ * | Title              |
+ * +--------------------+
+ * | Item 1             |
+ * +--------------------+
+ * | Item 2             |
+ * +--------------------+
+ * | Item 3             |
+ * +--------------------+
+ *
+ *
+ *
+ * Edit Mode:
+ *
+ *
+ * +--------------------+
+ * | Edit Parameter     |
+ * +--------------------+
+ * | Current Value      |
+ * +--------------------+
+ * |                    |
+ * +--------------------+
+ * | Controls           |
+ * +--------------------+
+ *
  */
-
 
 
 
 /*
- * --------------------------------------------------------------------------
- * End of file
- * --------------------------------------------------------------------------
+ * ============================================================================
+ * Compatibility Information
+ * ============================================================================
  */
 
+
+/*
+ * Compatible with:
+ *
+ *      menu_renderer.h
+ *      menu_edit.h
+ *      lcd_i2c.h
+ *      config.h
+ *
+ *
+ * Does not depend on:
+ *
+ *      menu_controller internals
+ *      button driver
+ *      ADC driver
+ *      UART driver
+ *
+ */
+
+
+
+/*
+ * ============================================================================
+ * End Of File
+ * ============================================================================
+ */
 
 /******************************************************************************
  *
- *                      END OF FILE
+ *                              END OF FILE
  *
  *
  *      lcd_display.c
  *
  *
- *      STM32F103C8T6
+ *      Version:
  *
- *              +
+ *          Clean Final v1.0.0
  *
- *      PCF8574 I2C Backpack
  *
- *              +
+ *      Changes:
  *
- *      HD44780 Character LCD
+ *          - Removed legacy edit rendering code.
+ *          - Removed float formatting dependency.
+ *          - Added MenuEdit_GetDisplayString() support.
+ *          - Preserved Page Based Menu rendering.
+ *          - Preserved LCD row based update.
+ *          - Removed unnecessary LCD context exposure.
+ *          - Improved separation between display and logic layers.
+ *
+ *
+ *      Architecture:
+ *
+ *
+ *          menu_controller
+ *                 |
+ *                 v
+ *
+ *          menu_renderer
+ *                 |
+ *                 v
+ *
+ *          lcd_display
+ *                 |
+ *                 v
+ *
+ *          lcd_i2c
+ *
+ *
+ *
+ *      Hardware:
+ *
+ *          MCU:
+ *              STM32F103C8T6
+ *
+ *          Display:
+ *              HD44780 Character LCD
+ *
+ *          Interface:
+ *              PCF8574 I2C Backpack
  *
  *
  ******************************************************************************/

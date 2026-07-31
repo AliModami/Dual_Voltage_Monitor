@@ -12,21 +12,43 @@
  *
  *------------------------------------------------------------------------------
  *
+ * MCU:
+ *
+ *      STM32F103C8T6
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Framework:
+ *
+ *      STM32 HAL
+ *
+ *------------------------------------------------------------------------------
+ *
  * Description:
  *
- *      This file contains all global configuration definitions used by the
- *      application.
+ *      Central application configuration interface.
  *
- *      All configurable parameters are centralized here.
+ *      This file contains:
+ *
+ *          - Global constants
+ *          - Default values
+ *          - Configuration API declarations
+ *          - Calibration parameters
+ *
  *
  *      Version:
  *
- *          config.h v2.0.3
+ *          config.h v2.0.4
  *
- *      Added:
  *
- *          - Vin Offset Calibration
- *          - Vout Offset Calibration
+ *      Changes:
+ *
+ *          v2.0.4
+ *
+ *          - Fixed include guard corruption
+ *          - Added ADC calibration compatibility
+ *          - Added voltage offset definitions
+ *          - Preserved existing API compatibility
  *
  ******************************************************************************/
 
@@ -59,7 +81,7 @@ extern "C"
 
 #define FIRMWARE_VERSION_MAJOR             2U
 #define FIRMWARE_VERSION_MINOR             0U
-#define FIRMWARE_VERSION_PATCH             3U
+#define FIRMWARE_VERSION_PATCH             4U
 
 
 
@@ -114,7 +136,7 @@ extern "C"
 
 /*
  * ============================================================================
- * Sample Rate Configuration
+ * Sampling Configuration
  * ============================================================================
  */
 
@@ -139,7 +161,13 @@ extern "C"
  */
 
 
-#define ADC_FILTER_SIZE                    8U
+#define ADC_FILTER_SIZE                     16U
+
+
+#define ADC_MAX_VALUE                      4095U
+
+
+#define ADC_REFERENCE_VOLTAGE_MV           3300U
 
 
 
@@ -147,12 +175,13 @@ extern "C"
 
 /*
  * ============================================================================
- * Flash Configuration
+ * Flash Configuration Storage
  * ============================================================================
  */
 
 
 #define CONFIG_FLASH_ADDRESS               0x0800FC00UL
+
 
 #define CONFIG_MAGIC_NUMBER                0x12345678UL
 
@@ -172,9 +201,7 @@ typedef enum
 
     CONFIG_ALARM_ONCE = 0U,
 
-
     CONFIG_ALARM_REPEAT
-
 
 } ConfigAlarmMode_t;
 
@@ -191,8 +218,17 @@ typedef enum
 
 /*
  * ============================================================================
- * Voltage Threshold Configuration
+ * Voltage Limit Configuration
  * ============================================================================
+ *
+ * Unit:
+ *
+ *      0.1 Volt
+ *
+ * Example:
+ *
+ *      2305 = 230.5V
+ *
  */
 
 
@@ -200,7 +236,6 @@ typedef enum
 
 
 #define CONFIG_HIGH_VOLTAGE_DEFAULT        260U
-
 
 
 #define CONFIG_VOLTAGE_LIMIT_MIN           0U
@@ -225,16 +260,16 @@ typedef enum
  *      0.1 Volt
  *
  *
- * Storage format:
+ * Range:
  *
- *      -200 ... +200
+ *      -20.0V ... +20.0V
  *
  *
- * Examples:
+ * Example:
  *
- *      +12.5V  -> 125
+ *      +12.5V = 125
  *
- *      -3.2V   -> -32
+ *      -3.2V  = -32
  *
  */
 
@@ -248,17 +283,30 @@ typedef enum
 #define CONFIG_OFFSET_STEP                 (1)
 
 
-
 #define CONFIG_VIN_OFFSET_DEFAULT          0
 
 
 #define CONFIG_VOUT_OFFSET_DEFAULT         0
 
+/*
+ * ============================================================================
+ * Feature Default Configuration
+ * ============================================================================
+ */
+
+
+#define CONFIG_STREAM_DEFAULT_ENABLE       0U
+
+
+#define CONFIG_BUZZER_DEFAULT_ENABLE       1U
+
+
+
 
 
 /*
  * ============================================================================
- * Validation Limits
+ * Validation Macros
  * ============================================================================
  */
 
@@ -276,32 +324,19 @@ typedef enum
 #define CONFIG_BAUD_RATE_MAX               UART_BAUD_RATE_MAX
 
 
-/*
-* ============================================================================
-* Feature Defaults
-* ============================================================================
-*/
-
-
-#define CONFIG_STREAM_DEFAULT_ENABLE       0U
-
-
-#define CONFIG_BUZZER_DEFAULT_ENABLE       1U
-
-
 
 
 
 /*
-* ============================================================================
-* Runtime Configuration API
-* ============================================================================
-*/
+ * ============================================================================
+ * Runtime Configuration API
+ * ============================================================================
+ *
+ * Configuration Manager
+ *
+ */
 
 
-/*
-* Configuration Manager
-*/
 void Config_Init(void);
 
 
@@ -312,10 +347,13 @@ void Config_ResetDefault(void);
 
 
 /*
-* ============================================================================
-* Storage Interface
-* ============================================================================
-*/
+ * ============================================================================
+ * Storage Interface
+ * ============================================================================
+ *
+ * Internal flash storage
+ *
+ */
 
 
 void Config_Save(void);
@@ -328,10 +366,10 @@ void Config_Load(void);
 
 
 /*
-* ============================================================================
-* Baud Rate API
-* ============================================================================
-*/
+ * ============================================================================
+ * Baud Rate Configuration API
+ * ============================================================================
+ */
 
 
 uint32_t Config_GetBaudRate(void);
@@ -344,10 +382,10 @@ void Config_SetBaudRate(uint32_t baud_rate);
 
 
 /*
-* ============================================================================
-* Sample Rate API
-* ============================================================================
-*/
+ * ============================================================================
+ * Sample Rate Configuration API
+ * ============================================================================
+ */
 
 
 uint32_t Config_GetSampleRate(void);
@@ -360,10 +398,10 @@ void Config_SetSampleRate(uint32_t sample_rate_ms);
 
 
 /*
-* ============================================================================
-* Alarm Enable API
-* ============================================================================
-*/
+ * ============================================================================
+ * Alarm Enable API
+ * ============================================================================
+ */
 
 
 uint8_t Config_GetAlarmEnable(void);
@@ -376,10 +414,10 @@ void Config_SetAlarmEnable(uint8_t enable);
 
 
 /*
-* ============================================================================
-* Voltage Threshold API
-* ============================================================================
-*/
+ * ============================================================================
+ * Voltage Threshold API
+ * ============================================================================
+ */
 
 
 uint16_t Config_GetLowVoltageLimit(void);
@@ -399,10 +437,10 @@ void Config_SetHighVoltageLimit(uint16_t limit);
 
 
 /*
-* ============================================================================
-* Alarm Mode API
-* ============================================================================
-*/
+ * ============================================================================
+ * Alarm Mode API
+ * ============================================================================
+ */
 
 
 ConfigAlarmMode_t Config_GetAlarmMode(void);
@@ -415,26 +453,31 @@ void Config_SetAlarmMode(ConfigAlarmMode_t mode);
 
 
 /*
-* ============================================================================
-* Voltage Calibration Offset API
-* ============================================================================
-*
-* Unit:
-*
-*      0.1 Volt
-*
-*
-* Example:
-*
-*      Stored value:
-*
-*          25
-*
-*      Display:
-*
-*          +2.5V
-*
-*/
+ * ============================================================================
+ * Voltage Calibration Offset API
+ * ============================================================================
+ *
+ * Unit:
+ *
+ *      0.1 Volt
+ *
+ *
+ * Range:
+ *
+ *      -200 ... +200
+ *
+ *
+ * Example:
+ *
+ *      Stored:
+ *
+ *          25
+ *
+ *      Display:
+ *
+ *          +2.5V
+ *
+ */
 
 
 int16_t Config_GetVinOffset(void);
@@ -454,10 +497,10 @@ void Config_SetVoutOffset(int16_t offset);
 
 
 /*
-* ============================================================================
-* Stream Feature API
-* ============================================================================
-*/
+ * ============================================================================
+ * Stream Feature API
+ * ============================================================================
+ */
 
 
 uint8_t Config_GetStreamEnable(void);
@@ -467,6 +510,55 @@ void Config_SetStreamEnable(uint8_t enable);
 
 
 
+
+
+/*
+ * ============================================================================
+ * Buzzer Configuration API
+ * ============================================================================
+ */
+
+
+uint8_t Config_GetBuzzerEnable(void);
+
+
+void Config_SetBuzzerEnable(uint8_t enable);
+
+
+
+
+
+/*
+ * ============================================================================
+ * ADC Calibration Configuration
+ * ============================================================================
+ *
+ * These values are software calibration parameters.
+ *
+ * Unit:
+ *
+ *      ADC counts
+ *
+ */
+
+
+int16_t Config_GetAdcVinGain(void);
+
+
+void Config_SetAdcVinGain(int16_t gain);
+
+
+
+int16_t Config_GetAdcVoutGain(void);
+
+
+void Config_SetAdcVoutGain(int16_t gain);
+
+/*
+ * ============================================================================
+ * End Of Public Interface
+ * ============================================================================
+ */
 
 
 #ifdef __cplusplus
@@ -481,28 +573,44 @@ void Config_SetStreamEnable(uint8_t enable);
 
 
 /******************************************************************************
-*
-*                              END OF FILE
-*
-*      File:
-*
-*          config.h
-*
-*      Version:
-*
-*          v2.0.3
-*
-*      Added:
-*
-*          - Vin Offset calibration
-*          - Vout Offset calibration
-*
-*      Offset Range:
-*
-*          -20.0V ... +20.0V
-*
-*      Offset Step:
-*
-*          0.1V
-*
-******************************************************************************/
+ *
+ *                              END OF FILE
+ *
+ * File:
+ *
+ *      config.h
+ *
+ * Version:
+ *
+ *      v2.0.4
+ *
+ * Added:
+ *
+ *      - Vin offset calibration support
+ *      - Vout offset calibration support
+ *      - ADC gain calibration interface
+ *      - Buzzer runtime configuration API
+ *
+ *
+ * Configuration Features:
+ *
+ *      - Centralized application configuration
+ *      - Flash storage support
+ *      - Alarm configuration
+ *      - UART stream configuration
+ *      - ADC calibration parameters
+ *      - Voltage threshold management
+ *
+ *
+ * Compatibility:
+ *
+ *      MCU:
+ *
+ *          STM32F103C8T6
+ *
+ *      Framework:
+ *
+ *          STM32 HAL
+ *
+ *
+ *****************************************************************************/

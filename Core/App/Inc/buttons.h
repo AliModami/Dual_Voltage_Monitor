@@ -29,196 +29,48 @@
  *      This file defines the public interface of the push button driver.
  *
  *
- *      The button driver provides a hardware abstraction layer between
- *      physical GPIO inputs and application software.
+ *      Features:
  *
+ *          - Software debounce
+ *          - Single press detection
+ *          - Long press detection
+ *          - Auto repeat
+ *          - Repeat acceleration
+ *          - Event based communication
  *
- *      Application modules must never access button GPIO pins directly.
  *
- *      All button interactions must be performed through this API.
+ *      Application modules must never access GPIO directly.
  *
- *
- *------------------------------------------------------------------------------
- *
- * Driver Responsibilities:
- *
- *      - Reading physical button inputs
- *
- *      - Software debounce processing
- *
- *      - Detecting valid button press events
- *
- *      - Providing event based communication with application layer
- *
- *
- *------------------------------------------------------------------------------
- *
- * Software Architecture:
- *
- *
- *              Physical Buttons
- *
- *                     |
- *                     |
- *                     v
- *
- *              +---------------+
- *              |   buttons.c   |
- *              |---------------|
- *              | GPIO Reading  |
- *              | Debounce FSM  |
- *              | Event Queue   |
- *              +---------------+
- *
- *                     |
- *                     |
- *                     v
- *
- *              Button_Event_t
- *
- *                     |
- *                     |
- *                     v
- *
- *              Application Layer
- *
- *                     |
- *                     |
- *                     v
- *
- *              Menu Controller
- *
- *
- *------------------------------------------------------------------------------
- *
- * Design Principles:
- *
- *      1.
- *      Hardware details are isolated inside the driver.
- *
- *
- *      2.
- *      Application works with logical button IDs only.
- *
- *
- *      3.
- *      Mechanical switch noise is handled internally.
- *
- *
- *      4.
- *      No blocking delay is used.
- *
- *
- *      5.
- *      Driver is designed for periodic polling.
- *
- *
- *------------------------------------------------------------------------------
- *
- * Example Usage:
- *
- *
- *      int main(void)
- *      {
- *
- *          HAL_Init();
- *
- *          MX_GPIO_Init();
- *
- *          Buttons_Init();
- *
- *
- *          while(1)
- *          {
- *
- *              Buttons_Task();
- *
- *
- *              Button_Event_t event;
- *
- *
- *              if(Buttons_GetEvent(&event))
- *              {
- *
- *                  switch(event.button)
- *                  {
- *
- *                      case BUTTON_ID_UP:
- *
- *                          Menu_MoveUp();
- *
- *                          break;
- *
- *
- *                      case BUTTON_ID_DOWN:
- *
- *                          Menu_MoveDown();
- *
- *                          break;
- *
- *
- *                      case BUTTON_ID_ENTER:
- *
- *                          Menu_Select();
- *
- *                          break;
- *
- *
- *                      case BUTTON_ID_BACK:
- *
- *                          Menu_Back();
- *
- *                          break;
- *
- *                  }
- *
- *              }
- *
- *          }
- *
- *      }
- *
- *
- *------------------------------------------------------------------------------
- *
- * Author:
- *
- *      Ali Modami & ChatGPT
  *
  *------------------------------------------------------------------------------
  *
  * Version:
  *
- *      2.0.0
+ *      2.3.0
  *
  *------------------------------------------------------------------------------
  *
  * Change History:
  *
+ *      Version 2.3.0
+ *
+ *          - Added long press support
+ *          - Added auto repeat
+ *          - Added repeat acceleration
+ *          - Added configurable repeat timing
+ *
+ *      Version 2.2.0
+ *
+ *          - Added repeat event model
  *
  *      Version 2.0.0
  *
- *          - Simplified event model
- *
- *          - Removed application dependency
- *
- *          - Prepared for Page Based Menu architecture
- *
- *          - Improved documentation
- *
- *
- *      Version 1.x
- *
- *          - Initial button driver implementation
- *
+ *          - Basic debounce FSM
  *
  ******************************************************************************/
 
-
-
 #ifndef BUTTONS_H
 #define BUTTONS_H
-
 
 
 #ifdef __cplusplus
@@ -232,12 +84,9 @@ extern "C"
  *                              Include Files
  ******************************************************************************/
 
-
 #include "stm32f1xx_hal.h"
 
-
 #include <stdbool.h>
-
 
 #include <stdint.h>
 
@@ -250,55 +99,17 @@ extern "C"
  ******************************************************************************/
 
 /*
- * ============================================================================
+ * Button electrical configuration:
  *
- * Button Hardware Mapping
+ * GPIO ---- Button ---- GND
  *
- * ============================================================================
+ * Active Low:
  *
+ * Released:
+ *      GPIO = HIGH
  *
- * Hardware connection:
- *
- *
- *          STM32F103C8T6
- *
- *
- *              PB14  ---- UP Button
- *
- *              PB13  ---- DOWN Button
- *
- *              PB12  ---- ENTER Button
- *
- *              PB15  ---- BACK Button
- *
- *
- *
- * Electrical configuration:
- *
- *
- *              GPIO ---- Button ---- GND
- *
- *
- * Internal Pull-Up configuration:
- *
- *
- *              Button Released:
- *
- *                  GPIO = HIGH
- *
- *
- *              Button Pressed:
- *
- *                  GPIO = LOW
- *
- *
- * The driver converts this electrical behavior into
- * logical button events.
- *
- *
- * Application does not need to know about Active Low logic.
- *
- * ============================================================================
+ * Pressed:
+ *      GPIO = LOW
  */
 
 
@@ -307,19 +118,17 @@ extern "C"
 #define BUTTON_UP_PIN           GPIO_PIN_14
 
 
-
 #define BUTTON_DOWN_PORT        GPIOB
 #define BUTTON_DOWN_PIN         GPIO_PIN_13
-
 
 
 #define BUTTON_ENTER_PORT       GPIOB
 #define BUTTON_ENTER_PIN        GPIO_PIN_12
 
 
-
 #define BUTTON_BACK_PORT        GPIOB
 #define BUTTON_BACK_PIN         GPIO_PIN_15
+
 
 
 
@@ -330,46 +139,106 @@ extern "C"
  ******************************************************************************/
 
 /*
- * ============================================================================
+ * Debounce time.
  *
- * Timing Configuration
- *
- * ============================================================================
- *
- * All values are expressed in milliseconds.
- *
- * These parameters define the response characteristics
- * of the button driver.
- *
- * ============================================================================
+ * The input must remain stable for this duration
+ * before accepting a state change.
  */
-
-
-
-/*
- * Minimum stable time required before accepting
- * a GPIO transition as a valid button press.
- *
- *
- * Larger value:
- *
- *      + Better noise rejection
- *
- *      - Slower response
- *
- */
-#define BUTTON_DEBOUNCE_TIME_MS      20U
+#define BUTTON_DEBOUNCE_TIME_MS              10U
 
 
 
 
 /*
- * Maximum number of pending events stored internally.
- *
- * Circular buffer is used internally.
- *
+ * Maximum number of stored events.
  */
-#define BUTTON_EVENT_QUEUE_SIZE      16U
+#define BUTTON_EVENT_QUEUE_SIZE              16U
+
+
+
+
+
+
+/******************************************************************************
+ *                         Long Press Configuration
+ ******************************************************************************/
+
+/*
+ * Time after initial press before repeat starts.
+ *
+ * Example:
+ *
+ * Hold DOWN:
+ *
+ *      Press
+ *       |
+ *       |
+ *      600ms
+ *       |
+ *       v
+ *
+ *      Start repeat
+ */
+#define BUTTON_REPEAT_START_TIME_MS          200U
+
+
+
+
+
+/*
+ * Normal repeat interval.
+ *
+ * After repeat starts:
+ *
+ *      Event
+ *
+ *      wait 300ms
+ *
+ *      Event
+ */
+#define BUTTON_REPEAT_INTERVAL_NORMAL_MS     100U
+
+
+
+
+
+/*
+ * Fastest repeat interval.
+ *
+ * Acceleration will never
+ * go below this value.
+ */
+#define BUTTON_REPEAT_INTERVAL_FAST_MS       40U
+
+
+
+
+
+/*
+ * Time required while holding
+ * before acceleration begins.
+ *
+ * Example:
+ *
+ * Hold button:
+ *
+ * 0 - 3 seconds:
+ *      300ms interval
+ *
+ * After 3 seconds:
+ *      interval decreases
+ */
+#define BUTTON_REPEAT_ACCELERATION_TIME_MS   500U
+
+
+
+
+
+/*
+ * Amount of interval reduction
+ * after each acceleration step.
+ */
+#define BUTTON_REPEAT_ACCELERATION_STEP_MS   50U
 
 
 
@@ -379,65 +248,39 @@ extern "C"
  *                         Button Identification
  ******************************************************************************/
 
-/**
- * @brief
- *      Logical button identifiers.
- *
- *
- * @details
- *
- *      These identifiers represent buttons from the
- *      application point of view.
- *
- *      Hardware pins are hidden inside buttons.c.
- *
- *
- * Example:
- *
- *
- *      if(event.button == BUTTON_ID_ENTER)
- *      {
- *
- *          Open selected menu item;
- *
- *      }
- *
- */
 typedef enum
 {
 
     /*
-     * Move cursor upward.
+     * Increase value.
      */
     BUTTON_ID_UP = 0U,
 
 
 
     /*
-     * Move cursor downward.
+     * Decrease value.
      */
     BUTTON_ID_DOWN,
 
 
 
     /*
-     * Confirm selection.
+     * Confirm operation.
      */
     BUTTON_ID_ENTER,
 
 
 
     /*
-     * Return to previous menu page.
+     * Return to previous page.
      */
     BUTTON_ID_BACK,
 
 
 
     /*
-     * Number of available buttons.
-     *
-     * Used internally for array sizing.
+     * Number of buttons.
      */
     BUTTON_ID_COUNT
 
@@ -452,46 +295,30 @@ typedef enum
  *                         Button Event Definition
  ******************************************************************************/
 
-/**
- * @brief
- *      Button event types generated by driver.
- *
- *
- * @details
- *
- *      The driver converts raw GPIO changes into
- *      clean software events.
- *
- *
- *      Example:
- *
- *          Mechanical switch:
- *
- *              HIGH LOW HIGH LOW HIGH
- *
- *
- *          After debounce:
- *
- *              BUTTON_EVENT_PRESS
- *
- *
- */
 typedef enum
 {
 
     /*
-     * No valid event.
+     * No event.
      */
     BUTTON_EVENT_NONE = 0U,
 
 
 
     /*
-     * Valid button press event.
-     *
-     * This is the main event used by menu system.
+     * Initial press event.
      */
-    BUTTON_EVENT_PRESS
+    BUTTON_EVENT_PRESS,
+
+
+
+    /*
+     * Auto repeat event.
+     *
+     * Generated while button
+     * remains pressed.
+     */
+    BUTTON_EVENT_REPEAT
 
 
 } Button_EventType_t;
@@ -499,56 +326,38 @@ typedef enum
 
 
 
-/**
- * @brief
- *      Button event data container.
- *
- *
- * @details
- *
- *      Every generated event contains:
- *
- *          - Source button
- *
- *          - Event type
- *
- *
- * Example:
- *
- *
- *      Button_Event_t event;
- *
- *
- *      if(Buttons_GetEvent(&event))
- *      {
- *
- *          if(event.button == BUTTON_ID_BACK)
- *          {
- *
- *              Menu_Back();
- *
- *          }
- *
- *      }
- *
- */
+
 typedef struct
 {
 
     /*
-     * Logical button source.
+     * Source button.
      */
     Button_Id_t button;
 
 
 
     /*
-     * Generated button action.
+     * Event type.
      */
     Button_EventType_t event;
 
 
 } Button_Event_t;
+
+/******************************************************************************
+ *                         Button Runtime Information
+ ******************************************************************************/
+
+/*
+ * This structure is intentionally hidden from application.
+ *
+ * Application only receives:
+ *
+ *      Button_Event_t
+ *
+ * Internal state machine details remain inside buttons.c.
+ */
 
 
 
@@ -562,62 +371,41 @@ typedef struct
  *
  * @details
  *
- *      This function must be called once during system startup.
- *
  *      Responsibilities:
  *
- *          - Initialize internal button states
+ *          - Clear runtime states
+ *          - Initialize debounce FSM
  *          - Clear event queue
- *          - Prepare driver runtime context
  *
  *
- *      Note:
- *
- *          GPIO configuration is NOT performed here.
- *
- *          GPIO initialization must be handled by STM32CubeMX
- *          generated code.
- *
- *
- * Example:
- *
- *      int main(void)
- *      {
- *          HAL_Init();
- *
- *          MX_GPIO_Init();
- *
- *          Buttons_Init();
- *
- *          while(1)
- *          {
- *              Buttons_Task();
- *          }
- *      }
+ *      GPIO initialization is performed by CubeMX.
  *
  */
 void Buttons_Init(void);
 
 
 
+
+
 /**
  * @brief
- *      Periodic execution function of button driver.
+ *      Periodic button processing task.
  *
  * @details
  *
- *      This function must be called continuously from the main loop.
+ *      Must be called continuously from main loop.
  *
  *
- *      It performs:
+ *      Performs:
  *
  *          - GPIO sampling
  *          - Debounce processing
- *          - State machine update
- *          - Event generation
+ *          - Long press detection
+ *          - Auto repeat generation
+ *          - Repeat acceleration
  *
  *
- *      The function is non-blocking.
+ *      Non blocking function.
  *
  *
  * Example:
@@ -625,8 +413,6 @@ void Buttons_Init(void);
  *      while(1)
  *      {
  *          Buttons_Task();
- *
- *          Menu_Task();
  *      }
  *
  */
@@ -634,61 +420,48 @@ void Buttons_Task(void);
 
 
 
+
+
 /**
  * @brief
- *      Read next button event from internal queue.
+ *      Get next available button event.
  *
  * @param event
- *      Pointer to destination event structure.
+ *      Destination event structure.
  *
  * @return
  *
  *      true:
- *          A valid event was received.
+ *          Valid event returned.
  *
  *      false:
- *          Queue is empty or parameter is invalid.
- *
- *
- * Example:
- *
- *      Button_Event_t event;
- *
- *      if(Buttons_GetEvent(&event))
- *      {
- *          if(event.button == BUTTON_ID_ENTER)
- *          {
- *              MenuController_Enter();
- *          }
- *      }
+ *          Queue empty.
  *
  */
 bool Buttons_GetEvent(Button_Event_t *event);
 
 
 
+
+
 /**
  * @brief
- *      Remove all pending button events.
+ *      Remove all pending events.
  *
  * @details
  *
- *      Useful when changing application mode or menu page.
- *
- *      Example:
- *
- *          MenuController_OpenPage();
- *
- *          Buttons_Flush();
+ *      Useful after changing application mode.
  *
  */
 void Buttons_Flush(void);
 
 
 
+
+
 /**
  * @brief
- *      Read current physical button state.
+ *      Read current electrical state.
  *
  * @param button
  *      Logical button identifier.
@@ -696,21 +469,76 @@ void Buttons_Flush(void);
  * @return
  *
  *      true:
- *          Button is currently pressed.
+ *          Button currently pressed.
  *
  *      false:
- *          Button is released.
+ *          Button released.
  *
  *
  * @note
  *
- *      This function does NOT apply debounce.
+ *      This function bypasses debounce.
  *
- *      It should only be used for special cases,
- *      not for normal menu navigation.
+ *      Normal application should use
+ *
+ *          Buttons_GetEvent()
  *
  */
 bool Buttons_IsPressed(Button_Id_t button);
+
+
+
+
+
+/******************************************************************************
+ *                         Event Usage Example
+ ******************************************************************************/
+
+/*
+ *
+ * Example:
+ *
+ *
+ * Button_Event_t event;
+ *
+ *
+ * if(Buttons_GetEvent(&event))
+ * {
+ *
+ *      switch(event.button)
+ *      {
+ *
+ *          case BUTTON_ID_UP:
+ *
+ *              if(event.event == BUTTON_EVENT_PRESS)
+ *              {
+ *                  IncreaseValue();
+ *              }
+ *
+ *              else if(event.event == BUTTON_EVENT_REPEAT)
+ *              {
+ *                  IncreaseValueFast();
+ *              }
+ *
+ *              break;
+ *
+ *
+ *          case BUTTON_ID_DOWN:
+ *
+ *              if(event.event == BUTTON_EVENT_REPEAT)
+ *              {
+ *                  DecreaseValue();
+ *              }
+ *
+ *              break;
+ *
+ *      }
+ *
+ * }
+ *
+ *
+ ******************************************************************************/
+
 
 
 
@@ -723,4 +551,87 @@ bool Buttons_IsPressed(Button_Id_t button);
 
 /******************************************************************************
  *                              End Of File
+ ******************************************************************************/
+
+/*
+ * Notes:
+ *
+ *      Version 2.3.0 introduces:
+ *
+ *      1.
+ *      Debounced press detection
+ *
+ *
+ *      2.
+ *      Long press detection
+ *
+ *
+ *      3.
+ *      Auto repeat event generation
+ *
+ *
+ *      4.
+ *      Repeat acceleration
+ *
+ *
+ *      Repeat behavior:
+ *
+ *
+ *          Initial Press
+ *
+ *                |
+ *                |
+ *                v
+ *
+ *          BUTTON_EVENT_PRESS
+ *
+ *
+ *                |
+ *                |
+ *          Hold button
+ *
+ *                |
+ *                |
+ *                v
+ *
+ *          Wait BUTTON_REPEAT_START_TIME_MS
+ *
+ *                |
+ *                |
+ *                v
+ *
+ *          BUTTON_EVENT_REPEAT
+ *
+ *
+ *                |
+ *                |
+ *          Hold longer
+ *
+ *                |
+ *                |
+ *                v
+ *
+ *          Reduce repeat interval
+ *
+ *                |
+ *                |
+ *                v
+ *
+ *          Faster repeat events
+ *
+ *
+ *
+ *      Recommended usage:
+ *
+ *          UP / DOWN:
+ *
+ *              PRESS
+ *              REPEAT
+ *
+ *
+ *          ENTER / BACK:
+ *
+ *              PRESS only
+ *
+ *
  ******************************************************************************/

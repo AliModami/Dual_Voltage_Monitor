@@ -444,7 +444,7 @@ void MenuEdit_Confirm(void)
             Config_SetVinOffset(
                     (int16_t)g_edit_value);
 
-            Config_Save();
+
 
             break;
 
@@ -454,7 +454,7 @@ void MenuEdit_Confirm(void)
             Config_SetVoutOffset(
                     (int16_t)g_edit_value);
 
-            Config_Save();
+
 
             break;
 
@@ -467,6 +467,12 @@ void MenuEdit_Confirm(void)
     }
 
 
+
+    /*
+     * Save all confirmed menu changes
+     * into internal Flash.
+     */
+    Config_Save();
 
     g_edit_old_value = g_edit_value;
 

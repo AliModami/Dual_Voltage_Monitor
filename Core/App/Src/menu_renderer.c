@@ -265,14 +265,10 @@ static void MenuRenderer_FillPageItems(
      */
     if(page->item_count > MENU_RENDER_VISIBLE_ITEMS)
     {
-        render_data.item_count =
-                MENU_RENDER_VISIBLE_ITEMS;
+        return;
     }
-    else
-    {
-        render_data.item_count =
-                page->item_count;
-    }
+
+    render_data.item_count = page->item_count;
 
 
 
@@ -437,6 +433,23 @@ void MenuRenderer_Update(void)
 
                 render_data.edit_title =
                         "Edit High Voltage";
+
+                break;
+
+
+            case EDIT_INPUT_VOLTAGE_OFFSET:
+
+                render_data.edit_title =
+                        "Edit Vin Offset";
+
+                break;
+
+
+
+            case EDIT_OUTPUT_VOLTAGE_OFFSET:
+
+                render_data.edit_title =
+                        "Edit Vout Offset";
 
                 break;
 
