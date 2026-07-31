@@ -327,6 +327,20 @@ void LCD_Display_Clear(void)
 
     HAL_Delay(5U);
 
+
+
+    /*
+     * Invalidate display cache.
+     *
+     * Required after full LCD clear,
+     * otherwise unchanged lines may not
+     * be rendered again.
+     */
+    memset(
+            lcd_line_cache,
+            0,
+            sizeof(lcd_line_cache));
+
 }
 
 

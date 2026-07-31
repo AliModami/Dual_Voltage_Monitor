@@ -33,11 +33,23 @@
  *
  ******************************************************************************/
 
+
+/******************************************************************************
+ *                              Include Files
+ *****************************************************************************/
+
+
 #include "menu_actions.h"
 
 #include "menu_edit.h"
 #include "screen_manager.h"
+
 #include "buzzer.h"
+
+
+
+
+
 
 
 /*
@@ -77,6 +89,8 @@ void MenuAction_LiveMonitor(void)
 
 
 
+
+
 /*
  * Start UART streaming.
  */
@@ -91,6 +105,7 @@ void MenuAction_StartStream(void)
      */
 
 }
+
 
 
 
@@ -135,6 +150,8 @@ void MenuAction_SampleRate(void)
 
 
 
+
+
 /*
  * ============================================================================
  * Alarm Settings Actions
@@ -157,6 +174,7 @@ void MenuAction_AlarmEnable(void)
 
 
 
+
 /*
  * Edit low voltage limit.
  */
@@ -167,6 +185,7 @@ void MenuAction_LowVoltageLimit(void)
             EDIT_LOW_VOLTAGE_LIMIT);
 
 }
+
 
 
 
@@ -187,6 +206,7 @@ void MenuAction_HighVoltageLimit(void)
 
 
 
+
 /*
  * Edit alarm mode.
  */
@@ -197,6 +217,11 @@ void MenuAction_AlarmMode(void)
             EDIT_ALARM_MODE);
 
 }
+
+
+
+
+
 
 /*
  * ============================================================================
@@ -215,6 +240,7 @@ void MenuAction_InputVoltageOffset(void)
             EDIT_INPUT_VOLTAGE_OFFSET);
 
 }
+
 
 
 
@@ -246,13 +272,13 @@ void MenuAction_OutputVoltageOffset(void)
 
 /*
  * Buzzer diagnostic.
- */
-/*
- * Buzzer diagnostic.
  *
- * This action only requests a beep pattern.
  *
- * The buzzer driver is responsible for:
+ * This action only requests
+ * a beep pattern.
+ *
+ *
+ * Buzzer driver is responsible for:
  *
  *      - Timing
  *      - GPIO control
@@ -264,25 +290,30 @@ void MenuAction_BuzzerTest(void)
 
     Buzzer_SetPattern(
             BUZZER_DOUBLE_BEEP);
-    		//BUZZER_ERROR);
+
 }
-
-
-
 
 
 /*
  * LCD diagnostic.
+ *
+ *
+ * This action starts
+ * the LCD hardware test routine.
+ *
+ *
+ * The LCD test module is responsible for:
+ *
+ *      - Displaying test patterns
+ *      - Checking LCD rows
+ *      - Returning display to normal state
+ *
  */
 void MenuAction_LCDTest(void)
 {
 
-    /*
-     * TODO:
-     *
-     * Connect LCD test module.
-     *
-     */
+    ScreenManager_SetScreen(
+            SCREEN_LCD_TEST);
 
 }
 
@@ -290,8 +321,10 @@ void MenuAction_LCDTest(void)
 
 
 
+
+
 /*
- * Factory calibration.
+ * Auto calibration.
  */
 void MenuAction_AutoCalibrate(void)
 {
@@ -304,6 +337,8 @@ void MenuAction_AutoCalibrate(void)
      */
 
 }
+
+
 
 
 
@@ -328,6 +363,9 @@ void MenuAction_FactoryDefault(void)
 
 
 
+
+
+
 /******************************************************************************
  *
  *                              END OF FILE
@@ -336,16 +374,24 @@ void MenuAction_FactoryDefault(void)
  *
  *      Version:
  *
- *          v1.0.2
+ *          Clean Final v1.0.3
  *
  *
  * Changes:
  *
- *      v1.0.2
+ *      v1.0.3
  *
- *          - Added Screen Manager dependency.
- *          - Connected Live Monitor action.
- *          - Preserved existing edit actions.
+ *          - Preserved real Buzzer Test action.
+ *
+ *          - Added LCD Test module dependency.
+ *
+ *          - Connected MenuAction_LCDTest()
+ *            to LCD_Test_Start().
+ *
+ *          - Kept menu action layer independent
+ *            from LCD hardware implementation.
+ *
  *          - No menu navigation changes.
  *
  ******************************************************************************/
+

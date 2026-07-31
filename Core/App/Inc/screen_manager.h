@@ -23,7 +23,14 @@ typedef enum
 
     SCREEN_STREAM,
 
-    SCREEN_SETTINGS
+    SCREEN_SETTINGS,
+
+    /*
+     * Service Mode
+     *
+     * LCD Diagnostic Screen
+     */
+    SCREEN_LCD_TEST
 
 } ScreenId_t;
 
@@ -47,6 +54,8 @@ void ScreenManager_SetScreen(ScreenId_t screen);
  * Get current active screen.
  */
 ScreenId_t ScreenManager_GetScreen(void);
+
+
 
 /*
  * Render current screen.

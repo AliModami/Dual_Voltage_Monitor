@@ -50,6 +50,7 @@
 #include "menu_actions.h"
 #include "adc_app.h"
 #include "config.h"
+#include "lcd_test.h"
 
 /* USER CODE END Includes */
 
@@ -221,6 +222,7 @@ int main(void)
 
       Buzzer_Task();
 
+      LCD_Test_Task();
 
 
 

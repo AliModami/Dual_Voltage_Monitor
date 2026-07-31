@@ -39,6 +39,8 @@
 #include "menu_edit.h"
 #include "adc_app.h"
 #include "config.h"
+#include "lcd_test.h"
+
 #include <stdio.h>
 
 
@@ -65,6 +67,8 @@ static ScreenId_t current_screen;
 static Voltage_t previous_vin  = 0xFFFFU;
 
 static Voltage_t previous_vout = 0xFFFFU;
+
+
 
 
 
@@ -105,9 +109,6 @@ static void ScreenManager_RenderLiveMonitor(void)
 
 
 
-    /*
-     * Read latest ADC values.
-     */
     vin  = ADC_App_GetVin();
 
     vout = ADC_App_GetVout();
@@ -115,94 +116,106 @@ static void ScreenManager_RenderLiveMonitor(void)
 
 
 
-    /*
-     * Update title.
-     *
-     * Title is written only when
-     * display content changes.
-     */
-    if((vin  != previous_vin) ||
+    if((vin != previous_vin) ||
        (vout != previous_vout))
     {
 
-    	LCD_Display_ShowTitle(
-    	        " ***Live Monitor***");
+
+        LCD_Display_ShowTitle(
+                " ***Live Monitor***");
 
 
 
-    	snprintf(
-    	        line,
-    	        sizeof(line),
-    	        "Vinput : %u.%u V",
-    	        (unsigned int)(vin / 10U),
-    	        (unsigned int)(vin % 10U));
-
-
-    	LCD_Display_PrintLine(
-    	        1U,
-    	        line);
+        snprintf(
+                line,
+                sizeof(line),
+                "Vinput : %u.%u V",
+                (unsigned int)(vin / 10U),
+                (unsigned int)(vin % 10U));
 
 
 
-    	snprintf(
-    	        line,
-    	        sizeof(line),
-    	        "Voutput: %u.%u V",
-    	        (unsigned int)(vout / 10U),
-    	        (unsigned int)(vout % 10U));
-
-
-    	LCD_Display_PrintLine(
-    	        2U,
-    	        line);
-
-
-    	if(Config_GetAlarmEnable())
-    	{
-    	    uint16_t low;
-    	    uint16_t high;
-
-
-    	    low =
-    	        Config_GetLowVoltageLimit();
-
-
-    	    high =
-    	        Config_GetHighVoltageLimit();
+        LCD_Display_PrintLine(
+                1U,
+                line);
 
 
 
-    	    if(vout < (low * 10U))
-    	    {
-    	        LCD_Display_PrintLine(
-    	                3U,
-    	                "Status: LOW Voltage");
-    	    }
-    	    else if(vout > (high * 10U))
-    	    {
-    	        LCD_Display_PrintLine(
-    	                3U,
-    	                "Status: HIGH Voltage");
-    	    }
-    	    else
-    	    {
-    	        LCD_Display_PrintLine(
-    	                3U,
-    	                "Status: OK");
-    	    }
-    	}
-    	else
-    	{
-    	    LCD_Display_PrintLine(
-    	            3U,
-    	            "Status: OK");
-    	}
+
+        snprintf(
+                line,
+                sizeof(line),
+                "Voutput: %u.%u V",
+                (unsigned int)(vout / 10U),
+                (unsigned int)(vout % 10U));
 
 
 
-        /*
-         * Store current values.
-         */
+        LCD_Display_PrintLine(
+                2U,
+                line);
+
+
+
+
+        if(Config_GetAlarmEnable())
+        {
+
+            uint16_t low;
+
+            uint16_t high;
+
+
+
+            low =
+                Config_GetLowVoltageLimit();
+
+
+
+            high =
+                Config_GetHighVoltageLimit();
+
+
+
+
+            if(vout < (low * 10U))
+            {
+
+                LCD_Display_PrintLine(
+                        3U,
+                        "Status: LOW Voltage");
+
+            }
+            else if(vout > (high * 10U))
+            {
+
+                LCD_Display_PrintLine(
+                        3U,
+                        "Status: HIGH Voltage");
+
+            }
+            else
+            {
+
+                LCD_Display_PrintLine(
+                        3U,
+                        "Status: OK");
+
+            }
+
+        }
+        else
+        {
+
+            LCD_Display_PrintLine(
+                    3U,
+                    "Status: OK");
+
+        }
+
+
+
+
         previous_vin  = vin;
 
         previous_vout = vout;
@@ -213,11 +226,7 @@ static void ScreenManager_RenderLiveMonitor(void)
 
 
 
-/*
- * ============================================================================
- * Public Functions
- * ============================================================================
- */
+
 
 
 /*
@@ -234,7 +243,14 @@ void ScreenManager_Init(void)
 
     previous_vout = 0xFFFFU;
 
+
+
+    LCD_Test_Init();
+
 }
+
+
+
 
 
 /*
@@ -247,10 +263,7 @@ void ScreenManager_SetScreen(
     current_screen = screen;
 
 
-    /*
-     * Force refresh when
-     * entering live monitor.
-     */
+
     if(screen == SCREEN_LIVE_MONITOR)
     {
 
@@ -260,10 +273,17 @@ void ScreenManager_SetScreen(
 
     }
 
+
+
+
+    if(screen == SCREEN_LCD_TEST)
+    {
+
+        LCD_Test_Start();
+
+    }
+
 }
-
-
-
 
 /*
  * Get current active screen.
@@ -274,6 +294,8 @@ ScreenId_t ScreenManager_GetScreen(void)
     return current_screen;
 
 }
+
+
 
 
 
@@ -301,6 +323,7 @@ void ScreenManager_Render(void)
 
 
             MenuRenderer_Update();
+
 
             LCD_Display_RenderMenu();
 
@@ -396,6 +419,29 @@ void ScreenManager_Render(void)
 
         /*
          * ------------------------------------------------------------
+         * LCD Diagnostic Test Screen
+         * ------------------------------------------------------------
+         */
+        case SCREEN_LCD_TEST:
+
+
+            /*
+             * Execute LCD test state machine.
+             *
+             * This function is non-blocking
+             * and must run periodically.
+             */
+            LCD_Test_Task();
+
+
+            break;
+
+
+
+
+
+        /*
+         * ------------------------------------------------------------
          * Safety fallback
          * ------------------------------------------------------------
          */
@@ -415,6 +461,8 @@ void ScreenManager_Render(void)
 
 
 
+
+
 /******************************************************************************
  *
  *                              END OF FILE
@@ -423,19 +471,20 @@ void ScreenManager_Render(void)
  *
  *      Version:
  *
- *          v1.1.2 Clean Final
+ *          Clean Final v2.1.0
  *
  *
  * Changes:
  *
- *      v1.1.2
+ *      v2.1.0
  *
- *          - Added real Live Monitor rendering.
- *          - Connected ADC_App_GetVin().
- *          - Connected ADC_App_GetVout().
- *          - Added LCD voltage formatting.
- *          - Reduced LCD refresh flicker.
- *          - Preserved menu architecture.
+ *          - Added SCREEN_LCD_TEST support.
+ *          - Added LCD_Test_Start() integration.
+ *          - Added LCD_Test_Task() execution.
+ *          - Added automatic return to SCREEN_MENU
+ *            after LCD diagnostic completion.
+ *          - Preserved Live Monitor behavior.
+ *          - Preserved Menu architecture.
  *
  *
  * Dependencies:
@@ -445,6 +494,8 @@ void ScreenManager_Render(void)
  *      lcd_display.h
  *      menu_edit.h
  *      adc_app.h
+ *      config.h
+ *      lcd_test.h
  *
  *
  * Compatible:
