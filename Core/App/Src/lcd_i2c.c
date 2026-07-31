@@ -221,6 +221,10 @@
  */
 static LCD_HandleTypeDef lcd;
 
+static LCD_HandleTypeDef lcd;
+
+static uint8_t lcd_last_expander_state = 0xFFU;
+
 
  /*
   * Cached cursor position.
@@ -280,29 +284,28 @@ static void LCD_Configure(void);
  *      PCF8574 output state.
  *
  */
-static void LCD_ExpanderWrite(
-        uint8_t data)
+static void LCD_ExpanderWrite(uint8_t data)
 {
+    if(lcd.hi2c == NULL)
+    {
+        return;
+    }
 
-    /*
-     * STM32 HAL requires shifted address.
-     *
-     * Example:
-     *
-     *      LCD address = 0x27
-     *
-     *      HAL address = 0x4E
-     *
-     */
+    if(data == lcd_last_expander_state)
+    {
+        return;
+    }
 
-    HAL_I2C_Master_Transmit(
+    lcd_last_expander_state = data;
+
+    (void)HAL_I2C_Master_Transmit(
             lcd.hi2c,
             (uint16_t)(lcd.address << 1U),
             &data,
             1U,
             HAL_MAX_DELAY);
-
 }
+
 
 
 
@@ -464,29 +467,23 @@ static void LCD_SendByte(
  * Send LCD command.
  *
  */
+
 void LCD_SendCommand(
         uint8_t command)
 {
-
     LCD_SendByte(
             command,
             LCD_MODE_COMMAND);
 
-
-
     /*
-     * These commands require
-     * additional execution time.
+     * Only CLEAR and HOME require
+     * long execution time.
      */
     if((command == LCD_CMD_CLEAR_DISPLAY) ||
        (command == LCD_CMD_RETURN_HOME))
     {
-
-        HAL_Delay(
-                LCD_COMMAND_DELAY_MS);
-
+        HAL_Delay(LCD_COMMAND_DELAY_MS);
     }
-
 }
 
 
@@ -1076,15 +1073,8 @@ void LCD_Home(void)
 */
 void LCD_Clear(void)
 {
-
-   LCD_SendCommand(
-           LCD_CMD_CLEAR_DISPLAY);
-
-
-
-   HAL_Delay(
-           2U);
-
+    LCD_SendCommand(
+            LCD_CMD_CLEAR_DISPLAY);
 }
 
 
