@@ -8,32 +8,47 @@
  *
  * Project:
  *
- *      Dual Voltage Monitor - Page Based Menu Prototype
+ *      Dual Voltage Monitor - Page Based Menu
  *
  *------------------------------------------------------------------------------
  *
  * Description:
  *
- *      This file defines the public interface of the Page Based Menu Engine.
+ *      This file defines the public interface of the
+ *      Page Based Menu Controller.
+ *
  *
  *      Responsibilities:
  *
- *      - Manage current page.
+ *      - Manage current menu page.
  *      - Manage selected item.
  *      - Handle UP / DOWN navigation.
- *      - Handle ENTER and BACK operations.
+ *      - Handle ENTER operation.
+ *      - Handle BACK operation.
  *      - Provide menu state information for renderer.
+ *
+ *
+ *      Navigation model:
+ *
+ *      - Pages are defined in menu_items.c.
+ *      - Child navigation uses child_page.
+ *      - Back navigation uses parent_page.
+ *      - No history stack is used.
+ *
  *
  *      This module has no dependency on:
  *
- *      - LCD driver
- *      - Button driver
- *      - Hardware layer
+ *      - LCD driver.
+ *      - Button driver.
+ *      - Hardware layer.
+ *      - I2C communication.
  *
- ******************************************************************************/
+ *****************************************************************************/
+
 
 #ifndef MENU_CONTROLLER_H
 #define MENU_CONTROLLER_H
+
 
 
 #ifdef __cplusplus
@@ -41,16 +56,28 @@ extern "C" {
 #endif
 
 
+
 #include <stdint.h>
+
 
 #include "menu_items.h"
 
 
 
-/*
- * Menu controller state.
+
+/******************************************************************************
  *
- * This structure contains runtime information only.
+ * Menu Controller State
+ *
+ *****************************************************************************/
+
+
+/*
+ * Runtime state of menu controller.
+ *
+ * This structure contains only
+ * active navigation state.
+ *
  */
 typedef struct
 {
@@ -61,155 +88,235 @@ typedef struct
     MenuPageId_t current_page;
 
 
+
     /*
-     * Current cursor position inside page.
+     * Selected item index
+     * inside current page.
      *
      * Range:
      *
-     * 0 ... item_count-1
+     *      0 ... item_count-1
+     *
      */
     uint8_t selected_item;
+
 
 
 } MenuControllerState_t;
 
 
 
+
+
+/******************************************************************************
+ *
+ * Initialization
+ *
+ *****************************************************************************/
+
+
 /*
  * Initialize menu controller.
  *
+ *
  * Initial state:
  *
- * Page:
- *      MAIN MENU PAGE 0
+ *      Page:
+ *          MENU_PAGE_MAIN_0
  *
- * Cursor:
- *      First item
+ *
+ *      Cursor:
+ *          First item
  *
  */
 void MenuController_Init(void);
 
 
 
+
+/******************************************************************************
+ *
+ * Cursor Navigation
+ *
+ *****************************************************************************/
+
+
 /*
  * Move cursor up.
  *
+ *
  * Rules:
  *
- * - Cursor decreases.
- * - Stops at first item.
- * - No wrap around.
+ *      - Decrease selected item.
+ *      - Stop at first item.
+ *      - No wrap around.
  *
  */
 void MenuController_MoveUp(void);
 
 
 
+
 /*
  * Move cursor down.
  *
+ *
  * Rules:
  *
- * - Cursor increases.
- * - Stops at last item.
- * - No wrap around.
+ *      - Increase selected item.
+ *      - Stop at last item.
+ *      - No wrap around.
  *
  */
 void MenuController_MoveDown(void);
 
 
-
-/*
- * Move to next page.
+/******************************************************************************
  *
- * Used for Page Based navigation.
+ * Menu Operations
  *
- * Example:
- *
- * MAIN MENU PAGE 0
- *        |
- *        v
- * MAIN MENU PAGE 1
- *
- */
-void MenuController_NextPage(void);
-
-
-
-/*
- * Move to previous page.
- *
- */
-void MenuController_PreviousPage(void);
-
+ *****************************************************************************/
 
 
 /*
  * ENTER button handler.
  *
+ *
  * Behavior:
+ *
  *
  * MENU_ITEM_SUBMENU:
  *
- *      Open child page
+ *      Open child page.
  *
  *
  * MENU_ITEM_ACTION:
  *
- *      Execute callback
+ *      Execute callback function.
  *
  */
 void MenuController_Enter(void);
 
 
 
+
+
 /*
  * BACK button handler.
  *
+ *
  * Behavior:
  *
- * - Return to parent page.
- * - Restore previous cursor position of parent page
+ *      - Return to parent page.
+ *      - Restore parent navigation context.
+ *
+ *
+ * Navigation source:
+ *
+ *      parent_page
+ *
+ *
+ * Note:
+ *
+ *      No history stack is used.
  *
  */
 void MenuController_Back(void);
 
 
 
-/*
- * Get current page.
+
+
+/******************************************************************************
  *
- * Used by renderer.
+ * Menu State Access
+ *
+ *****************************************************************************/
+
+
+/*
+ * Get current active page.
+ *
+ *
+ * Used by:
+ *
+ *      menu_renderer.c
+ *
+ *
+ * Return:
+ *
+ *      Pointer to current MenuPage_t.
  *
  */
 const MenuPage_t *MenuController_GetCurrentPage(void);
 
 
 
+
+
 /*
  * Get selected item index.
  *
- * Used by renderer for cursor drawing.
+ *
+ * Used by:
+ *
+ *      menu_renderer.c
+ *
+ *
+ * Return:
+ *
+ *      Current cursor position
+ *      inside active page.
  *
  */
 uint8_t MenuController_GetSelectedIndex(void);
 
 
 
+
+
 /*
- * Get selected item information.
+ * Get selected menu item.
+ *
+ *
+ * Used when application needs
+ * information about current selection.
+ *
+ *
+ * Return:
+ *
+ *      Pointer to selected MenuItem_t
+ *
+ *      NULL:
+ *          Invalid selection
  *
  */
 const MenuItem_t *MenuController_GetSelectedItem(void);
 
 
 
+
+
 /*
  * Get current page identifier.
+ *
+ *
+ * Return:
+ *
+ *      Current MenuPageId_t value.
  *
  */
 MenuPageId_t MenuController_GetCurrentPageId(void);
 
+
+
+
+
+/******************************************************************************
+ *
+ * End Of Public Interface
+ *
+ *****************************************************************************/
 
 
 #ifdef __cplusplus
@@ -217,4 +324,36 @@ MenuPageId_t MenuController_GetCurrentPageId(void);
 #endif
 
 
+
 #endif /* MENU_CONTROLLER_H */
+
+
+
+/******************************************************************************
+ *
+ * File End Verification
+ *
+ *------------------------------------------------------------------------------
+ *
+ * Version:
+ *
+ *      Clean Final v2.2.0
+ *
+ *
+ * Changes:
+ *
+ *      - Removed history stack dependency.
+ *      - Removed page navigation API.
+ *      - Navigation now relies on menu_items page links.
+ *      - Parent page handles BACK operation.
+ *      - Simplified controller interface.
+ *      - Preserved renderer compatibility.
+ *
+ *
+ * Compatible with:
+ *
+ *      menu_items.h
+ *      menu_controller.c v2.2.0
+ *      menu_renderer.c
+ *
+ *****************************************************************************/
