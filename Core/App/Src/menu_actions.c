@@ -243,24 +243,6 @@ void MenuAction_OutputVoltageOffset(void)
  */
 
 
-/*
- * Button diagnostic.
- */
-void MenuAction_ButtonTest(void)
-{
-
-    /*
-     * TODO:
-     *
-     * Connect button test module.
-     *
-     */
-
-}
-
-
-
-
 
 /*
  * Buzzer diagnostic.
@@ -303,13 +285,13 @@ void MenuAction_LCDTest(void)
 /*
  * Factory calibration.
  */
-void MenuAction_FactoryCalibration(void)
+void MenuAction_AutoCalibrate(void)
 {
 
     /*
      * TODO:
      *
-     * Connect factory calibration routine.
+     * Connect auto calibration routine.
      *
      */
 
@@ -322,13 +304,13 @@ void MenuAction_FactoryCalibration(void)
 /*
  * Restore default configuration.
  */
-void MenuAction_RestoreDefault(void)
+void MenuAction_FactoryDefault(void)
 {
 
     /*
      * TODO:
      *
-     * Connect configuration reset routine.
+     * Connect factory default configuration reset.
      *
      */
 

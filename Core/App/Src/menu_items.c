@@ -8,7 +8,7 @@
  *
  * Project:
  *
- *      Dual Voltage Monitor - Page Based Menu Prototype
+ *      Dual Voltage Monitor - Page Based Menu
  *
  *------------------------------------------------------------------------------
  *
@@ -18,7 +18,7 @@
  *
  *      Design rules:
  *
- *      - Menu data is separated from controller logic.
+ *      - Menu data is separated from menu control logic.
  *      - No LCD dependency.
  *      - No button dependency.
  *      - No scrolling concept.
@@ -27,38 +27,41 @@
  *
  ******************************************************************************/
 
+
 #include "menu_items.h"
 #include "menu_actions.h"
 #include "menu_edit.h"
+
 
 
 /*
  * ============================================================================
  * Private Action Prototypes
  * ============================================================================
- *
- * These functions are temporary application hooks.
- *
- * Later they can be replaced with real application callbacks:
- *
- * Example:
- *
- *      UART_StartStream();
- *      LCD_ShowMonitorPage();
- *      Config_Save();
- *
- * ============================================================================
  */
 
 
+/*
+ * General actions
+ */
 static void Action_LiveMonitor(void);
 
 static void Action_StartStream(void);
 
+
+
+/*
+ * Stream settings actions
+ */
 static void Action_BaudRate(void);
 
 static void Action_SampleRate(void);
 
+
+
+/*
+ * Alarm settings actions
+ */
 static void Action_AlarmEnable(void);
 
 static void Action_LowVoltageLimit(void);
@@ -67,19 +70,28 @@ static void Action_HighVoltageLimit(void);
 
 static void Action_AlarmMode(void);
 
+
+
+/*
+ * Calibration actions
+ */
 static void Action_InputVoltageOffset(void);
 
 static void Action_OutputVoltageOffset(void);
 
-static void Action_ButtonTest(void);
 
+
+/*
+ * Service mode actions
+ */
 static void Action_BuzzerTest(void);
 
 static void Action_LCDTest(void);
 
-static void Action_FactoryCalibration(void);
+static void Action_AutoCalibrate(void);
 
-static void Action_RestoreDefault(void);
+static void Action_FactoryDefault(void);
+
 
 
 
@@ -88,8 +100,6 @@ static void Action_RestoreDefault(void);
  * ============================================================================
  * MAIN MENU PAGE 0
  * ============================================================================
- *
- * LCD:
  *
  * Line 0 : Main Menu
  * Line 1 : > Live Monitor
@@ -131,12 +141,11 @@ static const MenuItem_t main_page0_items[] =
 
 
 
+
 /*
  * ============================================================================
  * MAIN MENU PAGE 1
  * ============================================================================
- *
- * LCD:
  *
  * Line 0 : Main Menu
  * Line 1 :   Alarm Settings
@@ -178,16 +187,10 @@ static const MenuItem_t main_page1_items[] =
 
 
 
+
 /*
  * ============================================================================
  * MAIN MENU PAGE 2
- * ============================================================================
- *
- * LCD:
- *
- * Line 0 : Main Menu
- * Line 1 :   System Info
- *
  * ============================================================================
  */
 
@@ -196,23 +199,18 @@ static const MenuItem_t main_page2_items[] =
 {
 
     {
-    	    .text       = "System Info",
-    	    .type       = MENU_ITEM_SUBMENU,
-    	    .child_page = MENU_PAGE_SYSTEM_INFO,
-    	    .action     = 0
+        .text       = "System Info",
+        .type       = MENU_ITEM_SUBMENU,
+        .child_page = MENU_PAGE_SYSTEM_INFO,
+        .action     = 0
     }
 
 };
-
-
-
 
 /*
  * ============================================================================
  * STREAM SETTINGS PAGE
  * ============================================================================
- *
- * LCD:
  *
  * Line 0 : Stream Settings
  * Line 1 :   Baud Rate
@@ -245,12 +243,11 @@ static const MenuItem_t stream_settings_items[] =
 
 
 
+
 /*
  * ============================================================================
  * ALARM SETTINGS PAGE 0
  * ============================================================================
- *
- * LCD:
  *
  * Line 0 : Alarm Settings
  * Line 1 :   Alarm Enable
@@ -292,6 +289,7 @@ static const MenuItem_t alarm_settings_page0_items[] =
 
 
 
+
 /*
  * ============================================================================
  * ALARM SETTINGS PAGE 1
@@ -310,6 +308,7 @@ static const MenuItem_t alarm_settings_page1_items[] =
     }
 
 };
+
 
 
 
@@ -341,32 +340,19 @@ static const MenuItem_t calibration_items[] =
 
 };
 
+
+
+
+
 /*
  * ============================================================================
  * SERVICE MODE PAGE 0
- * ============================================================================
- *
- * LCD:
- *
- * Line 0 : Service Mode
- * Line 1 :   Button Test
- * Line 2 :   Buzzer Test
- * Line 3 :   LCD Test
- *
  * ============================================================================
  */
 
 
 static const MenuItem_t service_page0_items[] =
 {
-
-    {
-        .text       = "Button Test",
-        .type       = MENU_ITEM_ACTION,
-        .child_page = MENU_INVALID_PAGE,
-        .action     = Action_ButtonTest
-    },
-
 
     {
         .text       = "Buzzer Test",
@@ -381,9 +367,18 @@ static const MenuItem_t service_page0_items[] =
         .type       = MENU_ITEM_ACTION,
         .child_page = MENU_INVALID_PAGE,
         .action     = Action_LCDTest
+    },
+
+
+    {
+        .text       = "Auto Calibrate",
+        .type       = MENU_ITEM_ACTION,
+        .child_page = MENU_INVALID_PAGE,
+        .action     = Action_AutoCalibrate
     }
 
 };
+
 
 
 
@@ -399,21 +394,14 @@ static const MenuItem_t service_page1_items[] =
 {
 
     {
-        .text       = "Factory Calibration",
+        .text       = "Factory Default",
         .type       = MENU_ITEM_ACTION,
         .child_page = MENU_INVALID_PAGE,
-        .action     = Action_FactoryCalibration
-    },
-
-
-    {
-        .text       = "Restore Default",
-        .type       = MENU_ITEM_ACTION,
-        .child_page = MENU_INVALID_PAGE,
-        .action     = Action_RestoreDefault
+        .action     = Action_FactoryDefault
     }
 
 };
+
 
 
 
@@ -429,16 +417,13 @@ static const MenuItem_t system_info_items[] =
 {
 
     {
-    	    .text       = "DVM Logger V1.0",
-    	    .type       = MENU_ITEM_ACTION,
-    	    .child_page = MENU_INVALID_PAGE,
-    	    .action     = 0
+        .text       = "DVM Logger V1.0",
+        .type       = MENU_ITEM_ACTION,
+        .child_page = MENU_INVALID_PAGE,
+        .action     = 0
     }
 
 };
-
-
-
 
 /*
  * ============================================================================
@@ -449,14 +434,14 @@ static const MenuItem_t system_info_items[] =
  *
  * Navigation rules:
  *
- * - next_page / previous_page:
- *      Used for page based navigation.
+ *      next_page / previous_page:
+ *          Used for page based navigation.
  *
- * - parent_page:
- *      Used by BACK button.
+ *      parent_page:
+ *          Used by BACK operation.
  *
- * - item_count:
- *      Maximum value is MENU_PAGE_VISIBLE_ITEMS.
+ *      item_count:
+ *          Number of valid items on page.
  *
  * ============================================================================
  */
@@ -467,9 +452,9 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * MAIN MENU PAGE 0
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -491,10 +476,11 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * MAIN MENU PAGE 1
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -516,10 +502,11 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * MAIN MENU PAGE 2
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -541,10 +528,11 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * STREAM SETTINGS
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -566,10 +554,11 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * ALARM SETTINGS PAGE 0
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -591,10 +580,11 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * ALARM SETTINGS PAGE 1
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -616,10 +606,11 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * CALIBRATION
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -641,10 +632,20 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * SERVICE MODE PAGE 0
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
+ *
+ * Items:
+ *
+ *      Buzzer Test
+ *      LCD Test
+ *
+ * Button Test removed.
+ *
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -666,10 +667,18 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 
 
+
 /*
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
  * SERVICE MODE PAGE 1
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
+ *
+ * Items:
+ *
+ *      Auto Calibrate
+ *      Factory Default
+ *
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -681,20 +690,17 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
     .items         = service_page1_items,
 
-    .item_count    = 2U,
+    .item_count    = 1U,
 
     .next_page     = MENU_INVALID_PAGE,
 
     .previous_page = MENU_PAGE_SERVICE_0
 },
 
-
-
-
 /*
- * --------------------------------------------------------------------------
- * SYSTEM INFO
- * --------------------------------------------------------------------------
+ * ----------------------------------------------------------------------------
+ * SYSTEM INFORMATION PAGE
+ * ----------------------------------------------------------------------------
  */
 
 
@@ -716,34 +722,33 @@ static const MenuPage_t menu_pages[MENU_PAGE_COUNT] =
 
 };
 
+
+
+
+
 /*
  * ============================================================================
  * Public API
  * ============================================================================
  *
- * This function provides read-only access to menu pages.
+ * Provides read-only access to menu page database.
  *
  * Used by:
  *
  *      menu_controller.c
  *
- * Example:
- *
- *      const MenuPage_t *page;
- *
- *      page = MenuItems_GetPage(MENU_PAGE_MAIN_0);
- *
  * ============================================================================
  */
 
 
-const MenuPage_t *MenuItems_GetPage(MenuPageId_t page_id)
+const MenuPage_t *MenuItems_GetPage(
+        MenuPageId_t page_id)
 {
 
     /*
      * Validate page index.
      */
-    if (page_id >= MENU_PAGE_COUNT)
+    if(page_id >= MENU_PAGE_COUNT)
     {
         return 0;
     }
@@ -756,23 +761,15 @@ const MenuPage_t *MenuItems_GetPage(MenuPageId_t page_id)
 
 
 
+
+
 /*
  * ============================================================================
- * Dummy Action Implementations
+ * Menu Action Wrappers
  * ============================================================================
  *
- * These functions are placeholders.
- *
- * They allow the menu framework to compile independently.
- *
- * Later they can be connected to real application modules.
- *
- * Example:
- *
- *      static void Action_StartStream(void)
- *      {
- *          UART_Stream_Start();
- *      }
+ * These functions isolate menu database
+ * from application action implementation.
  *
  * ============================================================================
  */
@@ -787,10 +784,12 @@ static void Action_LiveMonitor(void)
 
 
 
+
 static void Action_StartStream(void)
 {
     MenuAction_StartStream();
 }
+
 
 
 
@@ -803,10 +802,12 @@ static void Action_BaudRate(void)
 
 
 
+
 static void Action_SampleRate(void)
 {
     MenuAction_SampleRate();
 }
+
 
 
 
@@ -819,10 +820,12 @@ static void Action_AlarmEnable(void)
 
 
 
+
 static void Action_LowVoltageLimit(void)
 {
     MenuAction_LowVoltageLimit();
 }
+
 
 
 
@@ -835,6 +838,7 @@ static void Action_HighVoltageLimit(void)
 
 
 
+
 static void Action_AlarmMode(void)
 {
     MenuAction_AlarmMode();
@@ -843,91 +847,79 @@ static void Action_AlarmMode(void)
 
 
 
+
 static void Action_InputVoltageOffset(void)
 {
-
     MenuAction_InputVoltageOffset();
-
 }
+
 
 
 
 
 static void Action_OutputVoltageOffset(void)
 {
-
     MenuAction_OutputVoltageOffset();
-
 }
 
-
-
-
-static void Action_ButtonTest(void)
-{
-
-    /*
-     * TODO:
-     *
-     * Run push button diagnostic.
-     */
-
-}
 
 
 
 
 static void Action_BuzzerTest(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Activate buzzer test routine.
-     */
-
+    MenuAction_BuzzerTest();
 }
+
 
 
 
 
 static void Action_LCDTest(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Execute LCD diagnostic.
-     */
-
+    MenuAction_LCDTest();
 }
 
 
 
 
-static void Action_FactoryCalibration(void)
+
+static void Action_AutoCalibrate(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Start factory calibration procedure.
-     */
-
+    MenuAction_AutoCalibrate();
 }
 
 
 
 
-static void Action_RestoreDefault(void)
+
+static void Action_FactoryDefault(void)
 {
-
-    /*
-     * TODO:
-     *
-     * Restore default configuration.
-     */
-
+    MenuAction_FactoryDefault();
 }
 
 
+
+
+
+/******************************************************************************
+ *
+ *                              END OF FILE
+ *
+ *      menu_items.c
+ *
+ *      Version:
+ *
+ *          Clean Final v1.1.0
+ *
+ *
+ *      Changes:
+ *
+ *          - Removed Button Test item from Service Mode.
+ *          - Renamed Factory Calibration to Auto Calibrate.
+ *          - Renamed Restore Default to Factory Default.
+ *          - Removed unused Button Test action wrapper.
+ *          - Preserved Page Based Menu architecture.
+ *          - Preserved controller and renderer compatibility.
+ *
+ ******************************************************************************/

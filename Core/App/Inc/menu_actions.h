@@ -165,12 +165,6 @@ void MenuAction_OutputVoltageOffset(void);
  */
 
 
-/*
- * Run push button diagnostic.
- */
-void MenuAction_ButtonTest(void);
-
-
 
 /*
  * Run buzzer diagnostic.
@@ -185,18 +179,10 @@ void MenuAction_BuzzerTest(void);
 void MenuAction_LCDTest(void);
 
 
-
-/*
- * Start factory calibration procedure.
- */
-void MenuAction_FactoryCalibration(void);
+void MenuAction_AutoCalibrate(void);
 
 
-
-/*
- * Restore factory default configuration.
- */
-void MenuAction_RestoreDefault(void);
+void MenuAction_FactoryDefault(void);
 
 
 
