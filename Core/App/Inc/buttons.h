@@ -179,7 +179,7 @@ extern "C"
  *
  *      Start repeat
  */
-#define BUTTON_REPEAT_START_TIME_MS          200U
+#define BUTTON_REPEAT_START_TIME_MS          500U
 
 
 
@@ -196,7 +196,7 @@ extern "C"
  *
  *      Event
  */
-#define BUTTON_REPEAT_INTERVAL_NORMAL_MS     100U
+#define BUTTON_REPEAT_INTERVAL_NORMAL_MS     200U
 
 
 
@@ -208,7 +208,7 @@ extern "C"
  * Acceleration will never
  * go below this value.
  */
-#define BUTTON_REPEAT_INTERVAL_FAST_MS       40U
+#define BUTTON_REPEAT_INTERVAL_FAST_MS       50U
 
 
 
