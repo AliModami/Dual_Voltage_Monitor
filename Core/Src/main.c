@@ -150,15 +150,13 @@ int main(void)
 
   Config_Init();
 
+  ScreenManager_Init();
+
   MenuController_Init();
 
   MenuEdit_Init();
 
   MenuRenderer_Init();
-
-  ScreenManager_Init();
-
-  Buzzer_Init();
 
   Buttons_Init();
 
@@ -166,7 +164,7 @@ int main(void)
 
   ScreenManager_Render();
 
-
+  Buzzer_Init();
 
 
 //------------ LCD Test Line Begin --------------------------
@@ -250,7 +248,11 @@ int main(void)
 
                           ScreenManager_Render();
                       }
-                      else if(event.event == BUTTON_EVENT_PRESS)
+                      //else if(event.event == BUTTON_EVENT_PRESS)
+
+                      if((event.event == BUTTON_EVENT_PRESS) ||
+                         (event.event == BUTTON_EVENT_REPEAT))
+
                       {
                           MenuController_MoveUp();
 
@@ -275,7 +277,11 @@ int main(void)
 
                           ScreenManager_Render();
                       }
-                      else if(event.event == BUTTON_EVENT_PRESS)
+                      //else if(event.event == BUTTON_EVENT_PRESS)
+
+                      else if((event.event == BUTTON_EVENT_PRESS) ||
+                              (event.event == BUTTON_EVENT_REPEAT))
+
                       {
                           MenuController_MoveDown();
 

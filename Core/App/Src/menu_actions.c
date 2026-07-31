@@ -37,7 +37,7 @@
 
 #include "menu_edit.h"
 #include "screen_manager.h"
-
+#include "buzzer.h"
 
 
 /*
@@ -247,16 +247,24 @@ void MenuAction_OutputVoltageOffset(void)
 /*
  * Buzzer diagnostic.
  */
+/*
+ * Buzzer diagnostic.
+ *
+ * This action only requests a beep pattern.
+ *
+ * The buzzer driver is responsible for:
+ *
+ *      - Timing
+ *      - GPIO control
+ *      - Non-blocking execution
+ *
+ */
 void MenuAction_BuzzerTest(void)
 {
 
-    /*
-     * TODO:
-     *
-     * Connect buzzer test module.
-     *
-     */
-
+    Buzzer_SetPattern(
+            BUZZER_DOUBLE_BEEP);
+    		//BUZZER_ERROR);
 }
 
 

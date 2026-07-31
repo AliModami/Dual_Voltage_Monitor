@@ -14,14 +14,15 @@
  *
  * Description:
  *
- *      This module implements the runtime control
- *      of the page based menu system.
+ *      This module implements runtime control of
+ *      the page based menu system.
  *
  *
  *      Responsibilities:
  *
  *      - Maintain current page.
  *      - Maintain selected item.
+ *      - Preserve navigation context.
  *      - Handle UP / DOWN navigation.
  *      - Handle ENTER operation.
  *      - Handle BACK operation.
@@ -32,8 +33,11 @@
  *      - Child navigation:
  *              child_page
  *
- *      - Parent navigation:
- *              parent_page
+ *      - Page navigation:
+ *              next_page / previous_page
+ *
+ *      - Context restore:
+ *              stored page + cursor position
  *
  *
  *      This module has no dependency on:
@@ -68,10 +72,11 @@
 /*
  * Runtime menu state.
  *
- * This variable contains:
+ * Contains:
  *
- *      - Current active page
- *      - Current selected item
+ *      - Current active page.
+ *      - Current selected item.
+ *      - Previous navigation context.
  *
  */
 static MenuControllerState_t menu_state;
@@ -88,10 +93,9 @@ static MenuControllerState_t menu_state;
 /*
  * Get current page object.
  *
- * Internal helper function.
- *
  */
 static const MenuPage_t *MenuController_GetPage(void);
+
 
 
 
@@ -99,11 +103,24 @@ static const MenuPage_t *MenuController_GetPage(void);
 /*
  * Validate selected item.
  *
- * Prevents invalid item access
- * after page changes.
- *
  */
 static void MenuController_ValidateSelection(void);
+
+
+
+
+
+/*
+ * Save current navigation context.
+ *
+ * Used before:
+ *
+ *      - ENTER child page
+ *      - NEXT page transition
+ *      - PREVIOUS page transition
+ *
+ */
+static void MenuController_SaveContext(void);
 
 
 
@@ -116,13 +133,6 @@ static void MenuController_ValidateSelection(void);
 
 /*
  * Get current page object.
- *
- * Return:
- *
- *      Pointer to MenuPage_t
- *
- *      NULL:
- *          Invalid page
  *
  */
 static const MenuPage_t *MenuController_GetPage(void)
@@ -137,13 +147,10 @@ static const MenuPage_t *MenuController_GetPage(void)
 
 
 
+
+
 /*
  * Validate current selection.
- *
- *
- * This function guarantees:
- *
- *      selected_item < item_count
  *
  */
 static void MenuController_ValidateSelection(void)
@@ -159,23 +166,18 @@ static void MenuController_ValidateSelection(void)
 
     if(page == NULL)
     {
-
         menu_state.selected_item = 0U;
-
         return;
-
     }
+
 
 
 
 
     if(page->item_count == 0U)
     {
-
         menu_state.selected_item = 0U;
-
         return;
-
     }
 
 
@@ -184,13 +186,42 @@ static void MenuController_ValidateSelection(void)
 
     if(menu_state.selected_item >= page->item_count)
     {
-
         menu_state.selected_item = 0U;
-
     }
 
 
 }
+
+
+
+
+
+
+
+/*
+ * Save current navigation context.
+ *
+ * This function stores:
+ *
+ *      Current page
+ *      Current cursor position
+ *
+ * before leaving current page.
+ *
+ */
+static void MenuController_SaveContext(void)
+{
+
+    menu_state.parent_page =
+            menu_state.current_page;
+
+
+
+    menu_state.parent_selected_item =
+            menu_state.selected_item;
+
+}
+
 
 
 
@@ -206,13 +237,6 @@ static void MenuController_ValidateSelection(void)
 /*
  * Initialize menu controller.
  *
- *
- * Initial state:
- *
- *      MAIN MENU PAGE 0
- *
- *      First item selected
- *
  */
 void MenuController_Init(void)
 {
@@ -226,37 +250,54 @@ void MenuController_Init(void)
             0U;
 
 
+
+    menu_state.parent_page =
+            MENU_INVALID_PAGE;
+
+
+
+    menu_state.parent_selected_item =
+            0U;
+
+
 }
+
 /******************************************************************************
-*
-* Cursor Navigation
-*
-*****************************************************************************/
+ *
+ * Cursor Navigation
+ *
+ *****************************************************************************/
 
 
 /*
-* Move cursor up.
-*
-*
-* Rules:
-*
-*      - Decrease selected item.
-*      - Stop at first item.
-*      - No wrap around.
-*
-*/
+ * Move cursor up.
+ *
+ *
+ * Rules:
+ *
+ *      - Decrease selected item.
+ *      - Stop at first item.
+ *      - Move to previous page if available.
+ *
+ */
 void MenuController_MoveUp(void)
 {
+
     const MenuPage_t *page;
 
 
+
     page = MenuController_GetPage();
+
 
 
     if(page == NULL)
     {
         return;
     }
+
+
+
 
 
     /*
@@ -264,65 +305,109 @@ void MenuController_MoveUp(void)
      */
     if(menu_state.selected_item > 0U)
     {
+
         menu_state.selected_item--;
+
     }
+
+
+
 
 
     /*
      * First item reached.
      *
-     * Move to previous page if available.
+     * Move to previous page.
      */
     else
     {
+
         if(page->previous_page != MENU_INVALID_PAGE)
         {
+
+            /*
+             * Save current page context.
+             */
+            MenuController_SaveContext();
+
+
+
+
+            /*
+             * Change page.
+             */
             menu_state.current_page =
                     page->previous_page;
 
 
+
+
+            /*
+             * Previous page starts
+             * from last item.
+             */
             page = MenuController_GetPage();
+
 
 
             if(page != NULL &&
                page->item_count > 0U)
             {
+
                 menu_state.selected_item =
                         page->item_count - 1U;
+
             }
             else
             {
+
                 menu_state.selected_item = 0U;
+
             }
+
         }
+
     }
+
 
 }
 
 
+
+
+
+
+
+
 /*
-* Move cursor down.
-*
-*
-* Rules:
-*
-*      - Increase selected item.
-*      - Stop at last item.
-*      - No wrap around.
-*
-*/
+ * Move cursor down.
+ *
+ *
+ * Rules:
+ *
+ *      - Increase selected item.
+ *      - Stop at last item.
+ *      - Move to next page if available.
+ *
+ */
 void MenuController_MoveDown(void)
 {
+
     const MenuPage_t *page;
 
 
+
     page = MenuController_GetPage();
+
 
 
     if(page == NULL)
     {
         return;
     }
+
+
+
 
 
     if(page->item_count == 0U)
@@ -331,32 +416,65 @@ void MenuController_MoveDown(void)
     }
 
 
+
+
+
     /*
      * Move inside current page.
      */
     if(menu_state.selected_item <
        (page->item_count - 1U))
     {
+
         menu_state.selected_item++;
+
     }
+
+
+
 
 
     /*
      * Last item reached.
      *
-     * Move to next page if available.
+     * Move to next page.
      */
     else
     {
+
         if(page->next_page != MENU_INVALID_PAGE)
         {
+
+            /*
+             * Save current cursor
+             * before leaving page.
+             */
+            MenuController_SaveContext();
+
+
+
+
+
+            /*
+             * Change to next page.
+             */
             menu_state.current_page =
                     page->next_page;
 
 
-            menu_state.selected_item = 0U;
+
+
+            /*
+             * New page starts
+             * from first item.
+             */
+            menu_state.selected_item =
+                    0U;
+
         }
+
     }
+
 
 }
 
@@ -364,194 +482,249 @@ void MenuController_MoveDown(void)
 
 
 
+
 /******************************************************************************
-*
-* ENTER Operation
-*
-*****************************************************************************/
+ *
+ * ENTER Operation
+ *
+ *****************************************************************************/
 
 
 /*
-* ENTER button handler.
-*
-*
-* Behavior:
-*
-*
-* MENU_ITEM_SUBMENU:
-*
-*      Open child page.
-*
-*
-* MENU_ITEM_ACTION:
-*
-*      Execute callback.
-*
-*/
+ * ENTER button handler.
+ *
+ *
+ * MENU_ITEM_SUBMENU:
+ *
+ *      Save current context.
+ *      Open child page.
+ *
+ *
+ * MENU_ITEM_ACTION:
+ *
+ *      Execute callback.
+ *
+ */
 void MenuController_Enter(void)
 {
 
-   const MenuPage_t *page;
+    const MenuPage_t *page;
 
-
-   const MenuItem_t *item;
-
-
-
-
-   page = MenuController_GetPage();
-
-
-
-   if(page == NULL)
-   {
-       return;
-   }
-
-
-
-
-   MenuController_ValidateSelection();
+    const MenuItem_t *item;
 
 
 
 
 
-   if(page->item_count == 0U)
-   {
-       return;
-   }
+    page = MenuController_GetPage();
+
+
+
+    if(page == NULL)
+    {
+        return;
+    }
 
 
 
 
 
-   item = &page->items[
-           menu_state.selected_item];
+    MenuController_ValidateSelection();
 
 
 
 
 
-
-   /*
-    * Open child menu page.
-    */
-   if(item->type == MENU_ITEM_SUBMENU)
-   {
-
-       if(item->child_page != MENU_INVALID_PAGE)
-       {
-
-           menu_state.current_page =
-                   item->child_page;
-
-
-
-           /*
-            * New page starts
-            * from first item.
-            */
-           menu_state.selected_item =
-                   0U;
-
-       }
-
-   }
+    if(page->item_count == 0U)
+    {
+        return;
+    }
 
 
 
 
 
-   /*
-    * Execute menu action.
-    */
-   else if(item->type == MENU_ITEM_ACTION)
-   {
+    item = &page->items[
+            menu_state.selected_item];
 
-       if(item->action != NULL)
-       {
 
-           item->action();
 
-       }
 
-   }
+
+    /*
+     * Open child page.
+     */
+    if(item->type == MENU_ITEM_SUBMENU)
+    {
+
+        if(item->child_page != MENU_INVALID_PAGE)
+        {
+
+            /*
+             * Store parent context.
+             */
+            MenuController_SaveContext();
+
+
+
+
+
+            /*
+             * Enter child page.
+             */
+            menu_state.current_page =
+                    item->child_page;
+
+
+
+
+            /*
+             * Child page starts
+             * from first item.
+             */
+            menu_state.selected_item =
+                    0U;
+
+        }
+
+    }
+
+
+
+
+
+    /*
+     * Execute action.
+     */
+    else if(item->type == MENU_ITEM_ACTION)
+    {
+
+        if(item->action != NULL)
+        {
+
+            item->action();
+
+        }
+
+    }
 
 
 }
 
-
-
-
-
-
 /******************************************************************************
-*
-* BACK Operation
-*
-*****************************************************************************/
+ *
+ * BACK Operation
+ *
+ *****************************************************************************/
 
 
 /*
-* BACK button handler.
-*
-*
-* New navigation model:
-*
-*
-*      Current Page
-*
-*             |
-*             v
-*
-*      parent_page
-*
-*
-* No history stack is used.
-*
-*/
+ * BACK button handler.
+ *
+ *
+ * Behavior:
+ *
+ *      - Return to stored previous page.
+ *      - Restore previous cursor position.
+ *
+ *
+ * Works with:
+ *
+ *      - Child pages.
+ *      - Page based navigation.
+ *
+ *
+ */
 void MenuController_Back(void)
 {
 
-   const MenuPage_t *page;
+    const MenuPage_t *page;
 
 
 
-   page = MenuController_GetPage();
+    page = MenuController_GetPage();
+
+
+
+    if(page == NULL)
+    {
+        return;
+    }
 
 
 
 
-   if(page == NULL)
-   {
-       return;
-   }
+
+    if(menu_state.parent_page != MENU_INVALID_PAGE)
+    {
+
+        /*
+         * Return to stored page.
+         */
+        menu_state.current_page =
+                menu_state.parent_page;
 
 
 
 
 
-   if(page->parent_page != MENU_INVALID_PAGE)
-   {
+        /*
+         * Restore cursor.
+         */
+        menu_state.selected_item =
+                menu_state.parent_selected_item;
 
-       menu_state.current_page =
-               page->parent_page;
 
 
 
-       /*
-        * Parent page starts
-        * with first item.
-        */
-       menu_state.selected_item =
-               0U;
 
-   }
+        /*
+         * Clear stored context.
+         */
+        menu_state.parent_page =
+                MENU_INVALID_PAGE;
 
+
+
+        menu_state.parent_selected_item =
+                0U;
+
+
+    }
+    else
+    {
+
+        /*
+         * Fallback:
+         *
+         * Use page parent relation.
+         *
+         * This protects against
+         * invalid navigation state.
+         */
+        if(page->parent_page != MENU_INVALID_PAGE)
+        {
+
+            menu_state.current_page =
+                    page->parent_page;
+
+
+
+            menu_state.selected_item =
+                    0U;
+
+        }
+
+    }
 
 
 }
+
+
+
+
+
+
 
 /******************************************************************************
  *
@@ -562,16 +735,6 @@ void MenuController_Back(void)
 
 /*
  * Get current active page.
- *
- *
- * Used by:
- *
- *      menu_renderer.c
- *
- *
- * Return:
- *
- *      Pointer to current MenuPage_t
  *
  */
 const MenuPage_t *MenuController_GetCurrentPage(void)
@@ -586,18 +749,9 @@ const MenuPage_t *MenuController_GetCurrentPage(void)
 
 
 
+
 /*
  * Get selected item index.
- *
- *
- * Used by:
- *
- *      menu_renderer.c
- *
- *
- * Return:
- *
- *      Current cursor position
  *
  */
 uint8_t MenuController_GetSelectedIndex(void)
@@ -616,15 +770,6 @@ uint8_t MenuController_GetSelectedIndex(void)
 /*
  * Get selected menu item.
  *
- *
- * Return:
- *
- *      Pointer to selected item
- *
- *
- *      NULL:
- *          Invalid selection
- *
  */
 const MenuItem_t *MenuController_GetSelectedItem(void)
 {
@@ -633,8 +778,8 @@ const MenuItem_t *MenuController_GetSelectedItem(void)
 
 
 
-
     page = MenuController_GetPage();
+
 
 
 
@@ -679,11 +824,6 @@ const MenuItem_t *MenuController_GetSelectedItem(void)
 /*
  * Get current page identifier.
  *
- *
- * Return:
- *
- *      Current MenuPageId_t
- *
  */
 MenuPageId_t MenuController_GetCurrentPageId(void)
 {
@@ -691,11 +831,6 @@ MenuPageId_t MenuController_GetCurrentPageId(void)
     return menu_state.current_page;
 
 }
-
-
-
-
-
 
 /******************************************************************************
  *
@@ -721,7 +856,11 @@ MenuPageId_t MenuController_GetCurrentPageId(void)
  *
  *  [OK] ENTER uses child_page.
  *
- *  [OK] BACK uses parent_page.
+ *  [OK] BACK restores previous cursor context.
+ *
+ *  [OK] next_page transition preserves context.
+ *
+ *  [OK] previous_page transition preserves context.
  *
  *  [OK] Renderer API preserved.
  *
@@ -733,90 +872,149 @@ MenuPageId_t MenuController_GetCurrentPageId(void)
 
 
 
+
 /******************************************************************************
  *
- * End Of File
+ * Navigation Architecture
  *
  *****************************************************************************/
 
+
+/*
+ *
+ *
+ *              menu_items.c
+ *
+ *                    |
+ *                    v
+ *
+ *          menu_controller.c
+ *
+ *                    |
+ *                    v
+ *
+ *          menu_renderer.c
+ *
+ *                    |
+ *                    v
+ *
+ *             lcd_display.c
+ *
+ *                    |
+ *                    v
+ *
+ *              lcd_i2c.c
+ *
+ *
+ *
+ *
+ * Navigation Context Flow:
+ *
+ *
+ *
+ *      Current Page
+ *
+ *          |
+ *          |
+ *          |  ENTER / NEXT PAGE
+ *          |
+ *          v
+ *
+ *      Store:
+ *
+ *          page
+ *          cursor
+ *
+ *          |
+ *          v
+ *
+ *      New Page
+ *
+ *
+ *
+ *      BACK
+ *
+ *          |
+ *          v
+ *
+ *      Restore:
+ *
+ *          previous page
+ *          previous cursor
+ *
+ *
+ *
+ */
+
+
+
+
+
+
+
 /******************************************************************************
-*
-* File End Verification
-*
-*------------------------------------------------------------------------------
-*
-* Version:
-*
-*      Clean Final v2.2.0
-*
-*
-* Main Changes:
-*
-*      - Removed History Stack architecture.
-*
-*      - Removed MENU_MAX_DEPTH dependency.
-*
-*      - Removed MenuHistoryEntry_t.
-*
-*      - Removed Push / Pop history functions.
-*
-*      - Simplified navigation model.
-*
-*      - Child pages are opened using child_page.
-*
-*      - BACK navigation uses parent_page.
-*
-*      - Preserved compatibility with:
-*
-*              menu_items.h
-*              menu_renderer.c
-*
-*
-* Navigation Architecture:
-*
-*
-*
-*          menu_items.c
-*
-*              |
-*              v
-*
-*          menu_controller.c
-*
-*              |
-*              v
-*
-*          menu_renderer.c
-*
-*              |
-*              v
-*
-*          lcd_display.c
-*
-*              |
-*              v
-*
-*          lcd_i2c.c
-*
-*
-*
-* Hardware:
-*
-*      MCU:
-*          STM32F103C8T6
-*
-*
-*      Display:
-*          HD44780 Character LCD
-*
-*
-*      Interface:
-*          PCF8574 I2C Backpack
-*
-*
-*****************************************************************************/
+ *
+ * Version Information
+ *
+ *****************************************************************************/
 
 
 /*
-* End of menu_controller.c
-*/
+ *
+ * File:
+ *
+ *      menu_controller.c
+ *
+ *
+ * Version:
+ *
+ *      Clean Final v2.3.2
+ *
+ *
+ * Changes:
+ *
+ *      v2.3.2
+ *
+ *          - Fixed cursor restore after page navigation.
+ *
+ *          - Added context save before next_page transition.
+ *
+ *          - Added context save before previous_page transition.
+ *
+ *          - Improved BACK restoration behavior.
+ *
+ *          - Preserved child page navigation.
+ *
+ *          - Preserved Page Based Menu architecture.
+ *
+ *
+ *
+ * Compatible With:
+ *
+ *      menu_controller.h v2.3.0
+ *
+ *      menu_items.c
+ *
+ *      menu_renderer.c
+ *
+ *      lcd_display.c
+ *
+ *
+ *****************************************************************************/
+
+
+
+
+
+
+
+/******************************************************************************
+ *
+ *                              END OF FILE
+ *
+ *****************************************************************************/
+
+
+/*
+ * End of menu_controller.c
+ */

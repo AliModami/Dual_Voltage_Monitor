@@ -22,6 +22,7 @@
  *
  *      - Manage current menu page.
  *      - Manage selected item.
+ *      - Preserve parent selection context.
  *      - Handle UP / DOWN navigation.
  *      - Handle ENTER operation.
  *      - Handle BACK operation.
@@ -33,7 +34,7 @@
  *      - Pages are defined in menu_items.c.
  *      - Child navigation uses child_page.
  *      - Back navigation uses parent_page.
- *      - No history stack is used.
+ *      - Parent selection context is stored internally.
  *
  *
  *      This module has no dependency on:
@@ -50,11 +51,9 @@
 #define MENU_CONTROLLER_H
 
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
-
 
 
 #include <stdint.h>
@@ -75,8 +74,11 @@ extern "C" {
 /*
  * Runtime state of menu controller.
  *
- * This structure contains only
- * active navigation state.
+ * This structure contains:
+ *
+ *      - Current active page.
+ *      - Current selected item.
+ *      - Parent navigation context.
  *
  */
 typedef struct
@@ -102,9 +104,41 @@ typedef struct
 
 
 
+    /*
+     * Parent page identifier.
+     *
+     * Used to restore cursor position
+     * when returning from child menu.
+     *
+     */
+    MenuPageId_t parent_page;
+
+
+
+    /*
+     * Selected item index inside
+     * parent page.
+     *
+     * Example:
+     *
+     *      Main Menu
+     *
+     *          Service Mode  <--
+     *
+     *      Enter
+     *
+     *      Service Page
+     *
+     *
+     *      BACK returns cursor
+     *      to Service Mode.
+     *
+     */
+    uint8_t parent_selected_item;
+
+
+
 } MenuControllerState_t;
-
-
 
 
 
@@ -133,7 +167,6 @@ void MenuController_Init(void);
 
 
 
-
 /******************************************************************************
  *
  * Cursor Navigation
@@ -143,7 +176,6 @@ void MenuController_Init(void);
 
 /*
  * Move cursor up.
- *
  *
  * Rules:
  *
@@ -156,10 +188,8 @@ void MenuController_MoveUp(void);
 
 
 
-
 /*
  * Move cursor down.
- *
  *
  * Rules:
  *
@@ -189,6 +219,11 @@ void MenuController_MoveDown(void);
  *
  *      Open child page.
  *
+ *      Before opening:
+ *
+ *          Save current page
+ *          and selected item.
+ *
  *
  * MENU_ITEM_ACTION:
  *
@@ -208,17 +243,37 @@ void MenuController_Enter(void);
  * Behavior:
  *
  *      - Return to parent page.
- *      - Restore parent navigation context.
+ *      - Restore parent selection context.
  *
  *
- * Navigation source:
+ * Example:
  *
- *      parent_page
+ *
+ *      Main Menu
+ *
+ *          > Service Mode
+ *
+ *
+ *              ENTER
+ *
+ *
+ *      Service Mode Page
+ *
+ *
+ *              BACK
+ *
+ *
+ *      Main Menu
+ *
+ *          > Service Mode
  *
  *
  * Note:
  *
  *      No history stack is used.
+ *
+ *      Only immediate parent context
+ *      is restored.
  *
  */
 void MenuController_Back(void);
@@ -254,6 +309,7 @@ const MenuPage_t *MenuController_GetCurrentPage(void);
 
 
 
+
 /*
  * Get selected item index.
  *
@@ -270,6 +326,7 @@ const MenuPage_t *MenuController_GetCurrentPage(void);
  *
  */
 uint8_t MenuController_GetSelectedIndex(void);
+
 
 
 
@@ -292,6 +349,7 @@ uint8_t MenuController_GetSelectedIndex(void);
  *
  */
 const MenuItem_t *MenuController_GetSelectedItem(void);
+
 
 
 
@@ -337,23 +395,134 @@ MenuPageId_t MenuController_GetCurrentPageId(void);
  *
  * Version:
  *
- *      Clean Final v2.2.0
+ *      Clean Final v2.3.0
  *
  *
  * Changes:
  *
- *      - Removed history stack dependency.
- *      - Removed page navigation API.
- *      - Navigation now relies on menu_items page links.
- *      - Parent page handles BACK operation.
- *      - Simplified controller interface.
- *      - Preserved renderer compatibility.
+ *      - Added parent navigation context.
+ *
+ *      - Added parent selected item memory.
+ *
+ *      - BACK operation can restore
+ *        previous cursor position.
+ *
+ *      - Removed need for history stack.
+ *
+ *      - Preserved Page Based Menu architecture.
  *
  *
  * Compatible with:
  *
  *      menu_items.h
- *      menu_controller.c v2.2.0
+ *      menu_controller.c v2.3.0
  *      menu_renderer.c
+ *
+ *****************************************************************************/
+/******************************************************************************
+ *
+ *                              Architecture Notes
+ *
+ *****************************************************************************/
+
+
+/*
+ *
+ * Navigation Architecture:
+ *
+ *
+ *
+ *              menu_items.c
+ *
+ *                    |
+ *                    v
+ *
+ *          menu_controller.c
+ *
+ *                    |
+ *                    v
+ *
+ *          menu_renderer.c
+ *
+ *                    |
+ *                    v
+ *
+ *          lcd_display.c
+ *
+ *                    |
+ *                    v
+ *
+ *              lcd_i2c.c
+ *
+ *
+ *
+ *
+ * Parent Context Flow:
+ *
+ *
+ *
+ *      Parent Page
+ *
+ *          |
+ *          |
+ *          |  ENTER
+ *          |
+ *          v
+ *
+ *      Child Page
+ *
+ *          |
+ *          |
+ *          |  BACK
+ *          |
+ *          v
+ *
+ *      Parent Page
+ *
+ *      (same cursor position)
+ *
+ *
+ *
+ */
+
+
+/******************************************************************************
+ *
+ * Design Verification
+ *
+ *****************************************************************************/
+
+
+/*
+ *
+ * Compatibility checklist:
+ *
+ *
+ *  [OK] No history stack.
+ *
+ *  [OK] No dynamic memory.
+ *
+ *  [OK] No LCD dependency.
+ *
+ *  [OK] No button dependency.
+ *
+ *  [OK] Uses menu_items page model.
+ *
+ *  [OK] ENTER uses child_page.
+ *
+ *  [OK] BACK uses parent_page.
+ *
+ *  [OK] Parent cursor position preserved.
+ *
+ *  [OK] Renderer API preserved.
+ *
+ *
+ */
+
+
+
+/******************************************************************************
+ *
+ *                              END OF FILE
  *
  *****************************************************************************/
