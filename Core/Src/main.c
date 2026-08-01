@@ -37,8 +37,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include <stdio.h>
-#include "lcd_i2c.h"
+
 #include "lcd_display.h"
 #include "buzzer.h"
 #include "buttons.h"
@@ -51,6 +50,9 @@
 #include "adc_app.h"
 #include "config.h"
 #include "lcd_test.h"
+#include "factory_default.h"
+#include "factory_confirm.h"
+
 
 /* USER CODE END Includes */
 
@@ -91,6 +93,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
+
+
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -136,6 +141,7 @@ int main(void)
 
 
 
+
   /*
    * Startup delay.
    * Gives LCD module time to stabilize.
@@ -151,7 +157,11 @@ int main(void)
 
   Config_Init();
 
-  ScreenManager_Init();
+  ADC_App_Init();
+
+  Buttons_Init();
+
+  Buzzer_Init();
 
   MenuController_Init();
 
@@ -159,13 +169,13 @@ int main(void)
 
   MenuRenderer_Init();
 
-  Buttons_Init();
+  ScreenManager_Init();
 
-  ADC_App_Init();
+  FactoryDefault_Init();
+
+  FactoryConfirm_Init();
 
   ScreenManager_Render();
-
-  Buzzer_Init();
 
 
 //------------ LCD Test Line Begin --------------------------
@@ -191,6 +201,7 @@ int main(void)
 
 
   static uint32_t last_screen_update = 0U;
+
 
 
 
@@ -222,7 +233,33 @@ int main(void)
 
       Buzzer_Task();
 
-      LCD_Test_Task();
+/*
+       * Render menu only when
+       * factory confirmation is inactive.
+       */
+      if(FactoryConfirm_IsActive() == 0U)
+      {
+          ScreenManager_Render();
+      }
+
+
+      FactoryDefault_Task();
+
+      FactoryConfirm_Task();
+
+      if(FactoryDefault_GetState() == FACTORY_DEFAULT_DONE)
+      {
+          FactoryDefault_Init();
+
+          FactoryConfirm_Reset();
+
+          MenuController_Init();
+
+          ScreenManager_SetScreen(
+                  SCREEN_MENU);
+
+          ScreenManager_Render();
+      }
 
 
 
@@ -235,6 +272,32 @@ int main(void)
       while(Buttons_GetEvent(&event))
       {
 
+
+    	   /*
+    	     * Factory confirmation owns buttons
+    	     * while confirmation screen is active.
+    	     */
+
+    	  if(FactoryConfirm_IsActive())
+    	  {
+    	      FactoryConfirm_ProcessButton(&event);
+    	      continue;
+    	  }
+
+
+    	  /*
+    	     * Factory default operation
+    	     * blocks normal menu input.
+    	     */
+    	    if(FactoryDefault_IsActive())
+    	    {
+    	        continue;
+    	    }
+
+
+
+
+
           switch(event.button)
           {
 
@@ -244,22 +307,20 @@ int main(void)
                      (event.event == BUTTON_EVENT_REPEAT))
                   {
 
-                      if(MenuEdit_IsActive())
-                      {
-                          MenuEdit_Increment();
+                	  if(MenuEdit_IsActive())
+                	  {
+                	      MenuEdit_Increment();
 
-                          ScreenManager_Render();
-                      }
-                      //else if(event.event == BUTTON_EVENT_PRESS)
+                	      ScreenManager_Render();
+                	  }
 
-                      if((event.event == BUTTON_EVENT_PRESS) ||
-                         (event.event == BUTTON_EVENT_REPEAT))
+                	  else if((event.event == BUTTON_EVENT_PRESS) ||
+                	          (event.event == BUTTON_EVENT_REPEAT))
+                	  {
+                	      MenuController_MoveUp();
 
-                      {
-                          MenuController_MoveUp();
-
-                          ScreenManager_Render();
-                      }
+                	      ScreenManager_Render();
+                	  }
 
                   }
 
@@ -310,7 +371,11 @@ int main(void)
                           MenuController_Enter();
                       }
 
-                      ScreenManager_Render();
+
+                      if(FactoryConfirm_IsActive() == 0U)
+                      {
+                          ScreenManager_Render();
+                      }
 
                   }
 
@@ -341,7 +406,10 @@ int main(void)
 
                       }
 
-                      ScreenManager_Render();
+                      if(FactoryConfirm_IsActive() == 0U)
+                      {
+                          ScreenManager_Render();
+                      }
 
                   }
 
