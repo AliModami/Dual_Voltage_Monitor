@@ -596,8 +596,17 @@ void MenuController_Enter(void)
     /*
      * Execute action.
      */
+
     else if(item->type == MENU_ITEM_ACTION)
     {
+
+        /*
+         * Preserve cursor position
+         * before entering action/edit mode.
+         */
+        menu_state.parent_selected_item =
+                menu_state.selected_item;
+
 
         if(item->action != NULL)
         {
@@ -607,6 +616,20 @@ void MenuController_Enter(void)
         }
 
     }
+
+
+
+//    else if(item->type == MENU_ITEM_ACTION)
+//    {
+//
+//        if(item->action != NULL)
+//        {
+//
+//            item->action();
+//
+//        }
+//
+//    }
 
 
 }

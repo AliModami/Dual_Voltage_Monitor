@@ -207,10 +207,10 @@ typedef enum
 
 
 
-#define CONFIG_ALARM_ENABLE_DEFAULT        1U
+#define CONFIG_ALARM_ENABLE_DEFAULT        0U
 
 
-#define CONFIG_ALARM_MODE_DEFAULT          CONFIG_ALARM_REPEAT
+#define CONFIG_ALARM_MODE_DEFAULT          CONFIG_ALARM_ONCE
 
 
 
@@ -235,7 +235,7 @@ typedef enum
 #define CONFIG_LOW_VOLTAGE_DEFAULT         180U
 
 
-#define CONFIG_HIGH_VOLTAGE_DEFAULT        260U
+#define CONFIG_HIGH_VOLTAGE_DEFAULT        240U
 
 
 #define CONFIG_VOLTAGE_LIMIT_MIN           0U

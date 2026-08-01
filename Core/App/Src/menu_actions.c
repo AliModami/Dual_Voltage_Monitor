@@ -45,8 +45,8 @@
 #include "screen_manager.h"
 
 #include "buzzer.h"
-
-
+#include "factory_default.h"
+#include "factory_confirm.h"
 
 
 
@@ -351,11 +351,10 @@ void MenuAction_FactoryDefault(void)
 {
 
     /*
-     * TODO:
-     *
-     * Connect factory default configuration reset.
-     *
+     * Start confirmation dialog.
      */
+    FactoryConfirm_Start();
+
 
 }
 
